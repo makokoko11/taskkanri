@@ -10,7 +10,7 @@ const bizUDP = BIZ_UDPGothic({
 });
 
 export const metadata: Metadata = {
-  title: "タスク管理",
+  title: "連町事務局タスク管理",
   description: "地域コミュニティ向けタスク管理アプリ",
 };
 

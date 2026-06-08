@@ -122,9 +122,18 @@ function CalendarView({
       id="print-calendar"
       className="flex-1 min-h-0 overflow-y-auto bg-white rounded-xl border border-stone-200 flex flex-col shadow-sm print:rounded-none print:shadow-none print:border-0"
     >
-      {/* 印刷時のみ表示するタイトル */}
-      <div className="hidden print:flex items-center justify-center px-3 py-1 border-b-2 border-stone-400 shrink-0">
-        <span className="text-sm font-bold text-stone-800">{year}年{MONTHS_JA[month]}</span>
+      {/* 印刷時のみ表示するタイトル＋決裁欄 */}
+      <div className="hidden print:flex items-center justify-between px-3 py-1 border-b-2 border-stone-500 shrink-0">
+        <span className="text-sm font-bold text-stone-800">{month + 1}月分業務内容</span>
+        {/* 決裁欄（右上） */}
+        <div className="flex gap-0 border border-stone-500">
+          {["会長", "局長", "担当"].map((label) => (
+            <div key={label} className="flex flex-col items-center border-l border-stone-500 first:border-l-0 w-12">
+              <div className="text-[9px] font-bold text-stone-600 border-b border-stone-500 w-full text-center py-px">{label}</div>
+              <div className="h-8 w-full" />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 4列グリッド: 日付 | 連町 | まちづくり | 子ども会 */}
@@ -181,11 +190,7 @@ function CalendarView({
                   {dayTasks.map((t) => (
                     <div
                       key={t.id}
-                      className={`text-[10px] font-bold leading-tight truncate ${
-                        t.important
-                          ? "text-white bg-rose-700 px-0.5 rounded print:text-rose-900 print:bg-rose-100"
-                          : "text-stone-700"
-                      }`}
+                      className="text-[10px] font-bold leading-tight truncate text-stone-700"
                     >
                       {t.title}
                       {t.startTime && (
@@ -382,21 +387,35 @@ export default function TaskPage() {
       const html2canvas = (await import("html2canvas")).default;
       const { jsPDF } = await import("jspdf");
 
-      // overflow-y:auto のスクロール要素は visible にしてから全体キャプチャ
-      const prevStyle = { height: el.style.height, overflow: el.style.overflow };
-      el.style.height = el.scrollHeight + "px";
-      el.style.overflow = "visible";
+      // flex-1/min-h-0/overflow-y:auto の制約を外すためクローンして body 直下に配置
+      const clone = el.cloneNode(true) as HTMLElement;
+      clone.style.cssText = [
+        `position:fixed`,
+        `top:0`, `left:0`,
+        `width:${el.offsetWidth}px`,
+        `height:auto`,
+        `max-height:none`,
+        `overflow:visible`,
+        `flex:none`,
+        `z-index:-1`,
+        `background:white`,
+      ].join(";");
+      document.body.appendChild(clone);
 
-      const canvas = await html2canvas(el, {
+      // リフロー待機
+      await new Promise<void>((r) => setTimeout(r, 150));
+
+      const canvas = await html2canvas(clone, {
         scale: 1.5,
         useCORS: true,
         allowTaint: true,
         logging: false,
         backgroundColor: "#ffffff",
+        width: el.offsetWidth,
+        height: clone.scrollHeight,
       });
 
-      el.style.height = prevStyle.height;
-      el.style.overflow = prevStyle.overflow;
+      document.body.removeChild(clone);
 
       const imgData = canvas.toDataURL("image/jpeg", 0.85);
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -625,7 +644,7 @@ export default function TaskPage() {
       {/* ヘッダー */}
       <header className={`flex items-center justify-between print:hidden ${isCalendar ? "mb-2" : "mb-4"}`}>
         <h1 className="text-lg font-bold text-stone-800 tracking-widest">
-          タスク管理
+          連町事務局タスク管理
         </h1>
         <div className="flex items-center gap-3">
           <button
