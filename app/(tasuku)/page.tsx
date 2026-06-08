@@ -768,13 +768,20 @@ export default function TaskPage() {
             </div>
           </div>
 
+          {/* 仕切り線 */}
+          <div className="flex items-center gap-3 my-2">
+            <div className="flex-1 border-t border-stone-200" />
+            <span className="text-[10px] font-bold text-stone-300 tracking-widest">TASK</span>
+            <div className="flex-1 border-t border-stone-200" />
+          </div>
+
           {/* タブ */}
           <div className="flex gap-2 mb-4">
             {(["todo", "done"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-5 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                className={`px-5 py-0.5 rounded-lg text-sm font-bold transition-all ${
                   tab === t
                     ? "bg-slate-800 text-white shadow-sm"
                     : "bg-white border border-stone-200 text-stone-500 hover:bg-stone-50"
@@ -795,7 +802,7 @@ export default function TaskPage() {
               return (
                 <div key={cat} className="flex flex-col gap-1.5 min-w-0">
                   {/* 列ヘッダー */}
-                  <div className={`text-center text-xs font-bold text-white rounded-lg py-1 px-1 shadow-sm ${CATEGORY_COLOR[cat]}`}>
+                  <div className={`text-center text-xs font-bold text-white rounded-lg py-2.5 px-1 shadow-sm ${CATEGORY_COLOR[cat]}`}>
                     {CATEGORY_LABELS[cat]}
                     <span className="ml-1 opacity-60 text-[10px]">{list.length}</span>
                   </div>
