@@ -819,10 +819,13 @@ export default function TaskPage() {
                     const due = task.dueDate
                       ? tab === "done" ? formatDateReiwa(task.dueDate) : formatDate(task.dueDate)
                       : null;
+                    const cardClass = task.important && !task.done
+                      ? "bg-white border-4 border-rose-500"
+                      : `border ${URGENCY_STYLE[urgency]}`;
                     return (
                       <div
                         key={task.id}
-                        className={`rounded-xl border p-1.5 shadow-sm ${URGENCY_STYLE[urgency]}`}
+                        className={`rounded-xl p-1.5 ${cardClass}`}
                       >
                         {due && (
                           <p className={`text-[9px] font-bold leading-tight mb-0.5 ${due.colorClass}`}>
@@ -831,10 +834,7 @@ export default function TaskPage() {
                         )}
                         <div className="flex items-start gap-1">
                           <span className="flex-1 min-w-0 text-[11px] font-bold text-gray-700 leading-snug break-all">
-                            {task.important && !task.done && (
-                              <span className="inline-block text-[8px] font-bold text-white bg-rose-700 px-1 rounded mr-0.5 leading-tight">重</span>
-                            )}
-                            <span className={task.done ? "line-through text-stone-300" : ""}>{task.title}</span>
+                            <span className={task.done ? "text-stone-400" : ""}>{task.title}</span>
                           </span>
                           <button
                             onClick={() => deleteTask(task.id)}
