@@ -29,9 +29,9 @@ function formatDate(d: string): { text: string; colorClass: string } {
   const day = date.getDate();
   const dow = date.getDay();
   const isHoliday = HOLIDAYS.has(d);
-  const text = `${m}月${day}日（${DAY_JA[dow]}）`;
+  const text = `${m}/${day}（${DAY_JA[dow]}）`;
   const colorClass =
-    dow === 0 || isHoliday ? "text-red-400" : dow === 6 ? "text-blue-400" : "text-gray-600";
+    dow === 0 || isHoliday ? "text-red-400" : dow === 6 ? "text-blue-400" : "text-gray-500";
   return { text, colorClass };
 }
 
@@ -59,14 +59,27 @@ function getCardUrgency(dueDate: string | undefined, done: boolean) {
 }
 
 const URGENCY_STYLE: Record<string, string> = {
-  today:    "bg-red-100 border-red-300",
-  tomorrow: "bg-yellow-50 border-yellow-300",
+  today:    "bg-red-50 border-red-200",
+  tomorrow: "bg-yellow-50 border-yellow-200",
   normal:   "bg-white border-pink-100",
 };
 
-type Category = "work" | "private";
+type Category = "rencho" | "machizukuri" | "kodomoka";
 type Tab = "todo" | "done";
 type ViewMode = "list" | "calendar";
+
+const CATEGORIES: Category[] = ["rencho", "machizukuri", "kodomoka"];
+const CATEGORY_LABELS: Record<Category, string> = {
+  rencho: "連町",
+  machizukuri: "まちづくり",
+  kodomoka: "子ども会",
+};
+
+const CATEGORY_SHORT: Record<Category, string> = {
+  rencho: "連",
+  machizukuri: "ま",
+  kodomoka: "子",
+};
 
 interface Task {
   id: string;
@@ -76,113 +89,110 @@ interface Task {
   createdAt: number;
   dueDate?: string;
   doneAt?: string;
-  category: Category;
+  startTime?: string;
+  endTime?: string;
+  categories: Category[];
 }
 
 // ─── カレンダーコンポーネント ───────────────────────────────────
 function CalendarView({
   tasks,
-  category,
   year,
   month,
 }: {
   tasks: Task[];
-  category: Category;
   year: number;
   month: number;
 }) {
   const today = new Date().toISOString().slice(0, 10);
-  const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const weeks = Math.ceil((firstDow + daysInMonth) / 7);
   const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const monthTasks = tasks.filter(
-    (t) => t.category === category && t.dueDate?.startsWith(monthStr)
-  );
 
-  const cells: (number | null)[] = [
-    ...Array(firstDow).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-  while (cells.length % 7 !== 0) cells.push(null);
+  // 完了済みタスクを完了日(doneAt)で絞り込み
+  const doneTasks = tasks.filter((t) => t.done && t.doneAt?.startsWith(monthStr));
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 rounded-2xl overflow-hidden border-2 border-pink-100">
-      {/* 曜日ヘッダー */}
-      <div className="grid grid-cols-7 bg-gradient-to-r from-pink-50 to-purple-50 shrink-0">
-        {DAY_JA.map((d, i) => (
-          <div
-            key={d}
-            className={`text-center text-[11px] font-extrabold py-1.5 ${
-              i === 0 ? "text-red-600" : i === 6 ? "text-blue-600" : "text-gray-600"
-            }`}
-          >
-            {d}
-          </div>
-        ))}
+    <div
+      id="print-calendar"
+      className="flex-1 min-h-0 overflow-y-auto bg-white rounded-2xl border border-pink-100 flex flex-col print:rounded-none print:shadow-none print:border-0"
+    >
+      {/* 印刷時のみ表示するタイトル */}
+      <div className="hidden print:flex items-center justify-center px-3 py-1 border-b-2 border-gray-400 shrink-0">
+        <span className="text-sm font-extrabold text-gray-800">{year}年{MONTHS_JA[month]}</span>
       </div>
 
-      {/* カレンダーグリッド */}
+      {/* 4列グリッド: 日付 | 連町 | まちづくり | 子ども会 */}
       <div
-        className="flex-1 min-h-0 bg-white"
+        className="flex-1 min-h-0"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          gridTemplateRows: `repeat(${weeks}, 1fr)`,
+          gridTemplateColumns: "2.2rem 1fr 1fr 1fr",
+          gridTemplateRows: `1.6rem repeat(${daysInMonth}, auto)`,
         }}
       >
-        {cells.map((day, i) => {
-          if (!day) {
-            return <div key={`e${i}`} className="bg-gray-50/50 border border-pink-50/60" />;
-          }
+        {/* ── ヘッダー行 ── */}
+        <div className="border-b-2 border-pink-300 bg-gray-50" />
+        {CATEGORIES.map((cat) => (
+          <div
+            key={`h-${cat}`}
+            className="border-b-2 border-pink-300 border-l border-pink-200 flex items-center justify-center text-xs font-extrabold text-white bg-gradient-to-r from-pink-400 to-purple-400"
+          >
+            {CATEGORY_LABELS[cat]}
+          </div>
+        ))}
 
-          const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        {/* ── 日付行 ── */}
+        {Array.from({ length: daysInMonth }, (_, i) => i + 1).flatMap((day) => {
+          const dateStr = `${monthStr}-${String(day).padStart(2, "0")}`;
           const dow = new Date(year, month, day).getDay();
           const isToday = dateStr === today;
           const isHoliday = HOLIDAYS.has(dateStr);
-          const dayTasks = monthTasks.filter((t) => t.dueDate === dateStr);
-          const numColor =
-            isToday ? "" :
-            dow === 0 || isHoliday ? "text-red-600" :
-            dow === 6 ? "text-blue-600" : "text-gray-700";
+          const isSun = dow === 0 || isHoliday;
+          const isSat = dow === 6 && !isHoliday;
+          const dateColor = isSun ? "text-red-500" : isSat ? "text-blue-500" : "text-gray-600";
+          const rowBg = isToday ? "bg-pink-50" : isSun ? "bg-red-50/25" : "";
 
-          return (
+          return [
+            // 日付セル
             <div
-              key={day}
-              className={`border border-pink-50/60 p-px flex flex-col overflow-hidden ${
-                isToday ? "bg-pink-50/70" : ""
-              }`}
+              key={`d-${day}`}
+              className={`flex flex-col items-center justify-center border-b border-pink-100 min-h-[1.4rem] ${rowBg} ${dateColor}`}
             >
-              {/* 日付番号 */}
-              <div className="flex justify-center pt-px mb-px shrink-0">
-                <span
-                  className={`text-[11px] font-extrabold w-[18px] h-[18px] flex items-center justify-center rounded-full leading-none ${
-                    isToday ? "bg-pink-500 text-white" : numColor
-                  }`}
-                >
-                  {day}
-                </span>
-              </div>
+              <span className={`text-[11px] font-extrabold leading-none ${isToday ? "text-pink-500" : ""}`}>{day}</span>
+              <span className={`text-[9px] font-bold leading-none ${isToday ? "text-pink-400" : ""}`}>{DAY_JA[dow]}</span>
+            </div>,
 
-              {/* タスク一覧（セル内スクロール） */}
-              <div className="flex flex-col gap-px overflow-y-auto flex-1 min-h-0">
-                {dayTasks.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`text-[9px] leading-snug px-0.5 rounded break-all shrink-0 ${
-                      t.done
-                        ? "text-gray-500 line-through"
-                        : t.important
-                        ? "text-white bg-gradient-to-r from-pink-600 to-red-500"
-                        : "text-purple-900 bg-purple-100"
-                    }`}
-                  >
-                    {t.title}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
+            // カテゴリごとのタスクセル
+            ...CATEGORIES.map((cat) => {
+              const dayTasks = doneTasks.filter(
+                (t) => t.doneAt === dateStr && t.categories.includes(cat)
+              );
+              return (
+                <div
+                  key={`${day}-${cat}`}
+                  className={`border-b border-pink-100 border-l border-pink-100 px-1 py-0.5 flex flex-col justify-center gap-px min-h-[1.4rem] ${rowBg}`}
+                >
+                  {dayTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`text-[10px] font-bold leading-tight truncate ${
+                        t.important
+                          ? "text-white bg-gradient-to-r from-pink-500 to-red-400 px-0.5 rounded"
+                          : "text-purple-900"
+                      }`}
+                    >
+                      {t.title}
+                      {t.startTime && (
+                        <span className="text-[9px] text-gray-400 ml-1 font-normal">
+                          {t.startTime}{t.endTime ? "〜" + t.endTime : ""}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            }),
+          ];
         })}
       </div>
     </div>
@@ -195,8 +205,14 @@ export default function TaskPage() {
   const [input, setInput] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [important, setImportant] = useState(false);
+  const [inputCategory, setInputCategory] = useState<Category>("rencho");
   const [tab, setTab] = useState<Tab>("todo");
-  const [category, setCategory] = useState<Category>("work");
+  const [pendingDoneId, setPendingDoneId] = useState<string | null>(null);
+  const [pendingStart, setPendingStart] = useState("");
+  const [pendingEnd, setPendingEnd] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [sending, setSending] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
@@ -207,17 +223,40 @@ export default function TaskPage() {
     try {
       const saved = localStorage.getItem("tasuku-tasks");
       if (!saved) return;
-      const parsed: Task[] = JSON.parse(saved);
-      const migrated = parsed.map((t) => ({
-        ...t,
-        category: t.category ?? "work",
-        done: t.done ?? false,
-        important: t.important ?? false,
-      }));
+      const validCats = new Set<string>(["rencho", "machizukuri", "kodomoka"]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parsed: any[] = JSON.parse(saved);
+      const migrated: Task[] = parsed.map((t) => {
+        let cats: Category[];
+        if (Array.isArray(t.categories) && t.categories.length > 0) {
+          cats = t.categories.filter((c: string) => validCats.has(c)) as Category[];
+          if (cats.length === 0) cats = ["rencho"];
+        } else if (t.category && validCats.has(t.category)) {
+          cats = [t.category as Category];
+        } else {
+          cats = ["rencho"];
+        }
+        return {
+          id: t.id,
+          title: t.title,
+          done: t.done ?? false,
+          important: t.important ?? false,
+          createdAt: t.createdAt,
+          dueDate: t.dueDate,
+          doneAt: t.doneAt,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          categories: cats,
+        };
+      });
       setTasks(migrated);
     } catch {
       localStorage.removeItem("tasuku-tasks");
     }
+  }, []);
+
+  useEffect(() => {
+    setEmailTo(localStorage.getItem("tasuku-email") ?? "");
   }, []);
 
   useEffect(() => {
@@ -270,21 +309,45 @@ export default function TaskPage() {
         important,
         createdAt: Date.now(),
         dueDate: dueDate || undefined,
-        category,
+        categories: [inputCategory],
       },
     ]);
     setInput("");
     setDueDate("");
     setImportant(false);
+    setInputCategory("rencho");
     inputRef.current?.focus();
   };
 
-  const toggleDone = (id: string) =>
+  const handleDoneChange = (id: string, currentDone: boolean) => {
+    if (currentDone) {
+      persist(tasks.map((t) =>
+        t.id === id
+          ? { ...t, done: false, doneAt: undefined, startTime: undefined, endTime: undefined }
+          : t
+      ));
+    } else {
+      setPendingDoneId(id);
+      setPendingStart("09:00");
+      setPendingEnd("");
+    }
+  };
+
+  const confirmDone = () => {
+    if (!pendingDoneId) return;
     persist(tasks.map((t) =>
-      t.id === id
-        ? { ...t, done: !t.done, doneAt: !t.done ? new Date().toISOString().slice(0, 10) : undefined }
+      t.id === pendingDoneId
+        ? {
+            ...t,
+            done: true,
+            doneAt: new Date().toISOString().slice(0, 10),
+            startTime: pendingStart || undefined,
+            endTime: pendingEnd || undefined,
+          }
         : t
     ));
+    setPendingDoneId(null);
+  };
 
   const deleteTask = (id: string) =>
     persist(tasks.filter((t) => t.id !== id));
@@ -293,6 +356,69 @@ export default function TaskPage() {
     if (!("Notification" in window)) return;
     const p = await Notification.requestPermission();
     setNotifPermission(p);
+  };
+
+  const sendPdf = async () => {
+    const el = document.getElementById("print-calendar");
+    if (!el) return;
+    setSending(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+      const imgData = canvas.toDataURL("image/jpeg", 0.85);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = (canvas.height / canvas.width) * pw;
+      pdf.addImage(imgData, "JPEG", 0, 0, pw, Math.min(ph, pdf.internal.pageSize.getHeight()));
+
+      const fileName = `calendar-${calYear}-${String(calMonth + 1).padStart(2, "0")}.pdf`;
+      const subject = `${calYear}年${MONTHS_JA[calMonth]} カレンダー`;
+      const pdfBlob = pdf.output("blob");
+
+      // スマホ: Web Share API でネイティブ共有（メールアプリに直接渡す）
+      const shareFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+      if (navigator.share && navigator.canShare?.({ files: [shareFile] })) {
+        await navigator.share({ files: [shareFile], title: subject });
+        return;
+      }
+
+      // スマホ（HTTPアクセス等でWeb Share使えない場合）: PDFをダウンロード
+      const isMobile = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
+      if (isMobile) {
+        const url = URL.createObjectURL(pdfBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const toMsg = emailTo ? `\n送信先: ${emailTo}` : "";
+        alert(`「${fileName}」を保存しました。\nメールアプリで添付して送信してください。${toMsg}`);
+        return;
+      }
+
+      // PC: サーバーAPI経由でメール送信
+      if (!emailTo) { setShowSettings(true); return; }
+      const base64 = pdf.output("datauristring").split(",")[1];
+      const res = await fetch("/api/send-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdf: base64, to: emailTo, subject }),
+      });
+      if (res.ok) alert("送信しました");
+      else {
+        const err = await res.json();
+        alert(`送信失敗: ${err.error ?? "不明なエラー"}`);
+      }
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      console.error(e);
+      alert("PDF生成に失敗しました");
+    } finally {
+      setSending(false);
+    }
   };
 
   const prevMonth = () => {
@@ -304,32 +430,145 @@ export default function TaskPage() {
     else setCalMonth((m) => m + 1);
   };
 
-  const byCategory = tasks.filter((t) => t.category === category);
   const sortByDue = (arr: Task[]) =>
     [...arr].sort((a, b) => {
-      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate && !b.dueDate) return (b.important ? 1 : 0) - (a.important ? 1 : 0);
       if (!a.dueDate) return 1;
       if (!b.dueDate) return -1;
-      return a.dueDate.localeCompare(b.dueDate);
+      const dateCmp = a.dueDate.localeCompare(b.dueDate);
+      if (dateCmp !== 0) return dateCmp;
+      return (b.important ? 1 : 0) - (a.important ? 1 : 0);
     });
-  const todoList = sortByDue(byCategory.filter((t) => !t.done));
-  const doneList = sortByDue(byCategory.filter((t) => t.done));
-  const list = tab === "todo" ? todoList : doneList;
-  const previewDue = dueDate ? formatDate(dueDate) : null;
 
+  const colTasks = (cat: Category) =>
+    sortByDue(tasks.filter((t) => t.categories.includes(cat) && (tab === "todo" ? !t.done : t.done)));
+
+  const todoCount = tasks.filter((t) => !t.done).length;
+  const doneCount = tasks.filter((t) => t.done).length;
+  const previewDue = dueDate ? formatDate(dueDate) : null;
   const isCalendar = viewMode === "calendar";
 
+  // 今週末（今週の金曜日）
+  const todayBase = new Date();
+  const todayDow = todayBase.getDay();
+  const daysToFri = todayDow <= 5 ? 5 - todayDow : 6;
+  const friDate = new Date(todayBase.getFullYear(), todayBase.getMonth(), todayBase.getDate() + daysToFri);
+  // 月末（土日なら直前の金曜日）
+  const lastDay = new Date(todayBase.getFullYear(), todayBase.getMonth() + 1, 0);
+  if (lastDay.getDay() === 6) lastDay.setDate(lastDay.getDate() - 1);
+  else if (lastDay.getDay() === 0) lastDay.setDate(lastDay.getDate() - 2);
+
+  const quickDates = [
+    { label: "今日",    date: new Date(todayBase.getFullYear(), todayBase.getMonth(), todayBase.getDate()) },
+    { label: "明日",    date: new Date(todayBase.getFullYear(), todayBase.getMonth(), todayBase.getDate() + 1) },
+    { label: "明後日",  date: new Date(todayBase.getFullYear(), todayBase.getMonth(), todayBase.getDate() + 2) },
+    { label: "1週間後", date: new Date(todayBase.getFullYear(), todayBase.getMonth(), todayBase.getDate() + 7) },
+    { label: "今週末",  date: friDate },
+    { label: "月末",    date: lastDay },
+  ].map(({ label, date }) => ({
+    label,
+    value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+  }));
+
   return (
-    <div
-      className={`max-w-xl mx-auto px-4 ${
-        isCalendar
-          ? "h-[100dvh] flex flex-col pt-5 pb-[72px] overflow-hidden"
-          : "py-10 pb-28"
-      }`}
-    >
+    <div className={`px-2 ${isCalendar ? "h-[100dvh] flex flex-col pt-4 pb-4 overflow-hidden" : "max-w-2xl mx-auto py-6 pb-10"}`}>
+
+      {/* ── 設定モーダル ── */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-sm">
+            <h3 className="text-base font-extrabold text-gray-700 mb-4">設定</h3>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-pink-400 mb-1">PDF送信先メールアドレス</label>
+              <input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="example@gmail.com"
+                className="w-full px-3 py-2 border-2 border-pink-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:border-pink-400"
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 mb-5 leading-relaxed">
+              📱 <strong>スマホから送る場合：</strong><br />
+              「PDF送信」ボタンを押すとPDFが保存されます。<br />
+              メールアプリを開いて添付して送信してください。<br />
+              （HTTPS環境では自動でメールアプリが開きます）<br />
+              <br />
+              💻 <strong>PCから送る場合：</strong><br />
+              <code className="bg-gray-100 px-1 rounded">.env.local</code> に<br />
+              SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS を設定してください。
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setShowSettings(false)} className="flex-1 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-400">キャンセル</button>
+              <button
+                onClick={() => { localStorage.setItem("tasuku-email", emailTo); setShowSettings(false); }}
+                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-pink-400 to-purple-400 text-white text-sm font-extrabold"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 完了時刻入力モーダル ── */}
+      {pendingDoneId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-xs">
+            <h3 className="text-base font-extrabold text-gray-700 mb-4 text-center">作業時間を入力</h3>
+            {[
+              { label: "開始", value: pendingStart, set: setPendingStart },
+              { label: "終了", value: pendingEnd,   set: setPendingEnd   },
+            ].map(({ label, value, set }) => {
+              const hh = value.slice(0, 2);
+              const mm = value.slice(3, 5) || "00";
+              return (
+                <div key={label} className="flex items-center gap-3 mb-3">
+                  <span className="text-sm font-bold text-pink-400 w-10 shrink-0">{label}</span>
+                  <div className="flex items-center gap-1 flex-1">
+                    <select
+                      value={hh}
+                      onChange={(e) => set(e.target.value + ":" + mm)}
+                      className="flex-1 px-2 py-2 border-2 border-pink-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-pink-400"
+                    >
+                      <option value="">--</option>
+                      {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                    <span className="font-extrabold text-gray-400 text-sm">時</span>
+                    <select
+                      value={mm}
+                      onChange={(e) => set((hh || "00") + ":" + e.target.value)}
+                      className="w-20 px-2 py-2 border-2 border-pink-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-pink-400"
+                    >
+                      <option value="00">00 分</option>
+                      <option value="30">30 分</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPendingDoneId(null)}
+                className="flex-1 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-400 hover:bg-gray-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={confirmDone}
+                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-pink-400 to-purple-400 text-white text-sm font-extrabold hover:opacity-90 active:scale-95 transition-all"
+              >
+                完了にする
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ヘッダー */}
-      <header className={`flex items-center justify-between ${isCalendar ? "mb-2 shrink-0" : "mb-6"}`}>
-        <h1 className="text-2xl font-extrabold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
+      <header className={`flex items-center justify-between print:hidden ${isCalendar ? "mb-2" : "mb-4"}`}>
+        <h1 className="text-xl font-extrabold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
           タスク管理
         </h1>
         <div className="flex items-center gap-2">
@@ -341,6 +580,13 @@ export default function TaskPage() {
             <option value="list">📋 リスト</option>
             <option value="calendar">📅 カレンダー</option>
           </select>
+          <button
+            onClick={() => setShowSettings(true)}
+            title="設定"
+            className="text-xl leading-none hover:scale-110 active:scale-95 transition-all select-none"
+          >
+            ⚙️
+          </button>
           <button
             onClick={requestNotification}
             disabled={notifPermission === "denied"}
@@ -362,30 +608,21 @@ export default function TaskPage() {
       {isCalendar && (
         <>
           {/* 月ナビゲーション */}
-          <div className="flex items-center justify-between mb-2 shrink-0">
+          <div className="flex items-center justify-between mb-2 shrink-0 print:hidden">
+            <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full bg-white border-2 border-pink-200 text-pink-400 font-extrabold text-lg hover:bg-pink-50 active:scale-95 transition-all">‹</button>
+            <span className="text-base font-extrabold text-gray-700">{calYear}年{MONTHS_JA[calMonth]}</span>
+            <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-full bg-white border-2 border-pink-200 text-pink-400 font-extrabold text-lg hover:bg-pink-50 active:scale-95 transition-all">›</button>
+            <button onClick={() => window.print()} className="px-3 py-1 bg-gradient-to-r from-pink-400 to-purple-400 text-white text-xs font-extrabold rounded-xl hover:opacity-90 active:scale-95 transition-all shadow">🖨️ 印刷</button>
             <button
-              onClick={prevMonth}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white border-2 border-pink-200 text-pink-400 font-extrabold text-lg hover:bg-pink-50 active:scale-95 transition-all"
+              onClick={sendPdf}
+              disabled={sending}
+              className="px-3 py-1 bg-gradient-to-r from-blue-400 to-cyan-400 text-white text-xs font-extrabold rounded-xl hover:opacity-90 active:scale-95 transition-all shadow disabled:opacity-50"
             >
-              ‹
-            </button>
-            <span className="text-base font-extrabold text-gray-700">
-              {calYear}年{MONTHS_JA[calMonth]}
-            </span>
-            <button
-              onClick={nextMonth}
-              className="w-9 h-9 flex items-center justify-center rounded-full bg-white border-2 border-pink-200 text-pink-400 font-extrabold text-lg hover:bg-pink-50 active:scale-95 transition-all"
-            >
-              ›
+              {sending ? "送信中…" : "📧 PDF送信"}
             </button>
           </div>
 
-          <CalendarView
-            tasks={tasks}
-            category={category}
-            year={calYear}
-            month={calMonth}
-          />
+          <CalendarView tasks={tasks} year={calYear} month={calMonth} />
         </>
       )}
 
@@ -393,8 +630,27 @@ export default function TaskPage() {
       {!isCalendar && (
         <>
           {/* 入力エリア */}
-          <div className="flex gap-2 mb-6 items-start">
+          <div className="flex gap-2 mb-4 items-start">
             <div className="flex-1 min-w-0 flex flex-col gap-2">
+
+              {/* カテゴリ選択（1つだけ）— 入力欄の上 */}
+              <div className="flex items-center gap-4 flex-wrap">
+                {CATEGORIES.map((cat) => (
+                  <label key={cat} className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="radio"
+                      name="inputCategory"
+                      value={cat}
+                      checked={inputCategory === cat}
+                      onChange={() => setInputCategory(cat)}
+                      className="w-4 h-4 accent-purple-500 cursor-pointer"
+                    />
+                    <span className="text-sm font-bold text-gray-600">{CATEGORY_LABELS[cat]}</span>
+                  </label>
+                ))}
+              </div>
+
+              {/* タスク入力欄 */}
               <input
                 ref={inputRef}
                 value={input}
@@ -403,20 +659,41 @@ export default function TaskPage() {
                 placeholder="新しいタスクを入力..."
                 className="w-full px-4 py-3 border-2 border-pink-200 rounded-2xl bg-white text-gray-700 placeholder-pink-200 focus:outline-none focus:border-pink-400 transition"
               />
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2 px-3 py-2 border-2 border-pink-200 rounded-xl bg-white">
-                  <span className="text-xs font-bold text-pink-300">期限</span>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="text-sm text-gray-600 bg-transparent focus:outline-none cursor-pointer"
-                  />
-                  {previewDue && (
-                    <span className={`text-sm font-bold shrink-0 ${previewDue.colorClass}`}>
-                      {previewDue.text}
-                    </span>
-                  )}
+
+              {/* 期限クイック選択 + 重要 */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {quickDates.map(({ label, value }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setDueDate(value)}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold border-2 transition-all ${
+                          dueDate === value
+                            ? "bg-pink-400 border-pink-400 text-white"
+                            : "bg-white border-pink-200 text-pink-400 hover:bg-pink-50"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {dueDate && (
+                      <button type="button" onClick={() => setDueDate("")} className="px-2 py-1 rounded-xl text-xs font-bold border-2 border-gray-200 text-gray-400 bg-white">✕</button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 border-2 border-pink-200 rounded-xl bg-white">
+                    <span className="text-xs font-bold text-pink-300">期限</span>
+                    <input
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      className="text-sm text-gray-600 bg-transparent focus:outline-none cursor-pointer"
+                    />
+                    {previewDue && (
+                      <span className={`text-xs font-bold shrink-0 ${previewDue.colorClass}`}>{previewDue.text}</span>
+                    )}
+                  </div>
                 </div>
                 <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
@@ -431,7 +708,7 @@ export default function TaskPage() {
             </div>
             <button
               onClick={addTask}
-              className="px-5 py-3 bg-gradient-to-br from-pink-400 to-purple-400 text-white font-extrabold rounded-2xl hover:from-pink-500 hover:to-purple-500 active:scale-95 transition-all shadow-md"
+              className="px-4 py-3 bg-gradient-to-br from-pink-400 to-purple-400 text-white font-extrabold rounded-2xl hover:from-pink-500 hover:to-purple-500 active:scale-95 transition-all shadow-md"
             >
               追加
             </button>
@@ -451,95 +728,91 @@ export default function TaskPage() {
               >
                 {t === "todo" ? "タスク" : "完了"}
                 <span className="ml-1.5 text-xs opacity-70">
-                  {t === "todo" ? todoList.length : doneList.length}
+                  {t === "todo" ? todoCount : doneCount}
                 </span>
               </button>
             ))}
           </div>
 
-          {/* タスクリスト */}
-          <div className="space-y-2">
-            {list.length === 0 && (
-              <div className="text-center py-16 text-pink-200">
-                <p className="text-4xl mb-3">✿</p>
-                <p className="text-sm font-bold">タスクがありません</p>
-              </div>
-            )}
-            {list.map((task) => {
-              const urgency = getCardUrgency(task.dueDate, task.done);
-              const due = task.dueDate
-                ? tab === "done" ? formatDateReiwa(task.dueDate) : formatDate(task.dueDate)
-                : null;
+          {/* ─── 3列タスクリスト ─── */}
+          <div className="grid grid-cols-3 gap-2">
+            {CATEGORIES.map((cat) => {
+              const list = colTasks(cat);
               return (
-                <div
-                  key={task.id}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 shadow-sm transition-colors ${URGENCY_STYLE[urgency]}`}
-                >
-                  <div className="w-36 shrink-0">
-                    {due ? (
-                      <span className={`text-sm font-bold whitespace-nowrap ${due.colorClass}`}>
-                        {due.text}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-gray-200">—</span>
-                    )}
+                <div key={cat} className="flex flex-col gap-1.5 min-w-0">
+                  {/* 列ヘッダー */}
+                  <div className="text-center text-xs font-extrabold text-white bg-gradient-to-r from-pink-400 to-purple-400 rounded-xl py-1 px-1 shadow-sm">
+                    {CATEGORY_LABELS[cat]}
+                    <span className="ml-1 opacity-70 text-[10px]">{list.length}</span>
                   </div>
-                  <span className="flex-1 min-w-0 flex items-center gap-1.5">
-                    {task.important && !task.done && (
-                      <span className="shrink-0 text-xs font-extrabold text-white bg-gradient-to-r from-pink-400 to-red-400 px-1.5 py-0.5 rounded-lg">
-                        重要
-                      </span>
-                    )}
-                    <span className="text-sm font-bold text-gray-700">{task.title}</span>
-                  </span>
-                  {tab === "done" && task.doneAt && (
-                    <div className="shrink-0 text-right">
-                      <p className="text-xs text-gray-400">完了日</p>
-                      <p className={`text-xs font-bold whitespace-nowrap ${formatDate(task.doneAt).colorClass}`}>
-                        {formatDate(task.doneAt).text}
-                      </p>
+
+                  {/* タスクカード */}
+                  {list.length === 0 && (
+                    <div className="text-center py-6 text-pink-200">
+                      <p className="text-2xl">✿</p>
+                      <p className="text-[10px] font-bold mt-1">なし</p>
                     </div>
                   )}
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="w-6 h-6 flex items-center justify-center text-pink-200 hover:text-red-400 transition-colors rounded-full hover:bg-red-50 text-lg leading-none shrink-0"
-                  >
-                    ×
-                  </button>
-                  <input
-                    type="checkbox"
-                    checked={task.done}
-                    onChange={() => toggleDone(task.id)}
-                    className="w-5 h-5 accent-pink-400 cursor-pointer shrink-0"
-                  />
+                  {list.map((task) => {
+                    const urgency = getCardUrgency(task.dueDate, task.done);
+                    const due = task.dueDate
+                      ? tab === "done" ? formatDateReiwa(task.dueDate) : formatDate(task.dueDate)
+                      : null;
+                    return (
+                      <div
+                        key={task.id}
+                        className={`rounded-xl border p-1.5 shadow-sm ${URGENCY_STYLE[urgency]}`}
+                      >
+                        {due && (
+                          <p className={`text-[9px] font-bold leading-tight mb-0.5 ${due.colorClass}`}>
+                            {due.text}
+                          </p>
+                        )}
+                        <div className="flex items-start gap-1">
+                          <span className="flex-1 min-w-0 text-[11px] font-bold text-gray-700 leading-snug break-all">
+                            {task.important && !task.done && (
+                              <span className="inline-block text-[8px] font-extrabold text-white bg-gradient-to-r from-pink-400 to-red-400 px-1 rounded mr-0.5 leading-tight">重</span>
+                            )}
+                            <span className={task.done ? "line-through text-gray-400" : ""}>{task.title}</span>
+                          </span>
+                          <button
+                            onClick={() => deleteTask(task.id)}
+                            className="shrink-0 w-4 h-4 flex items-center justify-center text-pink-200 hover:text-red-400 transition-colors text-base leading-none"
+                          >
+                            ×
+                          </button>
+                          <input
+                            type="checkbox"
+                            checked={task.done}
+                            onChange={() => handleDoneChange(task.id, task.done)}
+                            className="shrink-0 w-4 h-4 accent-pink-400 cursor-pointer mt-0.5"
+                          />
+                        </div>
+                        {tab === "done" && task.doneAt && (
+                          <p className="text-[9px] text-gray-400 mt-0.5">
+                            {formatDate(task.doneAt).text}
+                            {(task.startTime || task.endTime) && (
+                              <span className="ml-1">
+                                {task.startTime ?? "?"} 〜 {task.endTime ?? "?"}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
 
-          {byCategory.length > 0 && (
-            <p className="text-center text-xs font-bold text-pink-300 mt-8">
-              {doneList.length} / {byCategory.length} 完了 ✿
+          {tasks.length > 0 && (
+            <p className="text-center text-xs font-bold text-pink-300 mt-6">
+              {doneCount} / {tasks.length} 完了 ✿
             </p>
           )}
         </>
       )}
-
-      {/* 下部ナビ */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur border-t-2 border-pink-100 flex">
-        {(["work", "private"] as const).map((c) => (
-          <button
-            key={c}
-            onClick={() => setCategory(c)}
-            className={`flex-1 py-3 flex flex-col items-center gap-0.5 text-xs font-extrabold transition-colors ${
-              category === c ? "text-pink-500" : "text-gray-300 hover:text-pink-300"
-            }`}
-          >
-            <span className="text-xl">{c === "work" ? "💼" : "🏠"}</span>
-            <span>{c === "work" ? "仕事用" : "プライベート"}</span>
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }
