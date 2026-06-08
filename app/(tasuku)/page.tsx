@@ -59,9 +59,15 @@ function getCardUrgency(dueDate: string | undefined, done: boolean) {
 }
 
 const URGENCY_STYLE: Record<string, string> = {
-  today:    "bg-red-50 border-red-200",
-  tomorrow: "bg-yellow-50 border-yellow-200",
-  normal:   "bg-white border-pink-100",
+  today:    "bg-red-50 border-red-300",
+  tomorrow: "bg-amber-50 border-amber-200",
+  normal:   "bg-white border-stone-200",
+};
+
+const CATEGORY_COLOR: Record<string, string> = {
+  rencho:      "bg-slate-700",
+  machizukuri: "bg-emerald-800",
+  kodomoka:    "bg-rose-800",
 };
 
 type Category = "rencho" | "machizukuri" | "kodomoka";
@@ -114,11 +120,11 @@ function CalendarView({
   return (
     <div
       id="print-calendar"
-      className="flex-1 min-h-0 overflow-y-auto bg-white rounded-2xl border border-pink-100 flex flex-col print:rounded-none print:shadow-none print:border-0"
+      className="flex-1 min-h-0 overflow-y-auto bg-white rounded-xl border border-stone-200 flex flex-col shadow-sm print:rounded-none print:shadow-none print:border-0"
     >
       {/* 印刷時のみ表示するタイトル */}
-      <div className="hidden print:flex items-center justify-center px-3 py-1 border-b-2 border-gray-400 shrink-0">
-        <span className="text-sm font-extrabold text-gray-800">{year}年{MONTHS_JA[month]}</span>
+      <div className="hidden print:flex items-center justify-center px-3 py-1 border-b-2 border-stone-400 shrink-0">
+        <span className="text-sm font-bold text-stone-800">{year}年{MONTHS_JA[month]}</span>
       </div>
 
       {/* 4列グリッド: 日付 | 連町 | まちづくり | 子ども会 */}
@@ -131,11 +137,11 @@ function CalendarView({
         }}
       >
         {/* ── ヘッダー行 ── */}
-        <div className="border-b-2 border-pink-300 bg-gray-50" />
+        <div className="border-b border-stone-300 bg-stone-100" />
         {CATEGORIES.map((cat) => (
           <div
             key={`h-${cat}`}
-            className="border-b-2 border-pink-300 border-l border-pink-200 flex items-center justify-center text-xs font-extrabold text-white bg-gradient-to-r from-pink-400 to-purple-400"
+            className={`border-b border-stone-300 border-l border-stone-200 flex items-center justify-center text-xs font-bold text-white ${CATEGORY_COLOR[cat]}`}
           >
             {CATEGORY_LABELS[cat]}
           </div>
@@ -149,17 +155,17 @@ function CalendarView({
           const isHoliday = HOLIDAYS.has(dateStr);
           const isSun = dow === 0 || isHoliday;
           const isSat = dow === 6 && !isHoliday;
-          const dateColor = isSun ? "text-red-500" : isSat ? "text-blue-500" : "text-gray-600";
-          const rowBg = isToday ? "bg-pink-50" : isSun ? "bg-red-50/25" : "";
+          const dateColor = isSun ? "text-red-600" : isSat ? "text-blue-600" : "text-stone-600";
+          const rowBg = isToday ? "bg-slate-50" : isSun ? "bg-red-50/30" : "";
 
           return [
             // 日付セル
             <div
               key={`d-${day}`}
-              className={`flex flex-col items-center justify-center border-b border-pink-100 min-h-[1.4rem] ${rowBg} ${dateColor}`}
+              className={`flex flex-col items-center justify-center border-b border-stone-100 min-h-[1.4rem] ${rowBg} ${dateColor}`}
             >
-              <span className={`text-[11px] font-extrabold leading-none ${isToday ? "text-pink-500" : ""}`}>{day}</span>
-              <span className={`text-[9px] font-bold leading-none ${isToday ? "text-pink-400" : ""}`}>{DAY_JA[dow]}</span>
+              <span className={`text-[11px] font-bold leading-none ${isToday ? "text-slate-800 underline underline-offset-2" : ""}`}>{day}</span>
+              <span className={`text-[9px] leading-none ${isToday ? "text-slate-600" : ""}`}>{DAY_JA[dow]}</span>
             </div>,
 
             // カテゴリごとのタスクセル
@@ -170,20 +176,20 @@ function CalendarView({
               return (
                 <div
                   key={`${day}-${cat}`}
-                  className={`border-b border-pink-100 border-l border-pink-100 px-1 py-0.5 flex flex-col justify-center gap-px min-h-[1.4rem] ${rowBg}`}
+                  className={`border-b border-stone-100 border-l border-stone-100 px-1 py-0.5 flex flex-col justify-center gap-px min-h-[1.4rem] ${rowBg}`}
                 >
                   {dayTasks.map((t) => (
                     <div
                       key={t.id}
                       className={`text-[10px] font-bold leading-tight truncate ${
                         t.important
-                          ? "text-white bg-gradient-to-r from-pink-500 to-red-400 px-0.5 rounded"
-                          : "text-purple-900"
+                          ? "text-white bg-rose-700 px-0.5 rounded"
+                          : "text-stone-700"
                       }`}
                     >
                       {t.title}
                       {t.startTime && (
-                        <span className="text-[9px] text-gray-400 ml-1 font-normal">
+                        <span className="text-[9px] text-stone-400 ml-1 font-normal">
                           {t.startTime}{t.endTime ? "〜" + t.endTime : ""}
                         </span>
                       )}
@@ -376,26 +382,34 @@ export default function TaskPage() {
       const subject = `${calYear}年${MONTHS_JA[calMonth]} カレンダー`;
       const pdfBlob = pdf.output("blob");
 
-      // スマホ: Web Share API でネイティブ共有（メールアプリに直接渡す）
-      const shareFile = new File([pdfBlob], fileName, { type: "application/pdf" });
-      if (navigator.share && navigator.canShare?.({ files: [shareFile] })) {
-        await navigator.share({ files: [shareFile], title: subject });
-        return;
+      // スマホ: Web Share API でメールアプリにPDF添付して渡す（HTTPS/localhostで確実に動作）
+      if (navigator.share) {
+        const shareFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+        try {
+          await navigator.share({ files: [shareFile], title: subject });
+          return;
+        } catch (shareErr) {
+          if ((shareErr as Error).name === "AbortError") return; // ユーザーがキャンセル
+          // ファイル共有非対応なら下のフォールバックへ
+        }
       }
 
-      // スマホ（HTTPアクセス等でWeb Share使えない場合）: PDFをダウンロード
+      // フォールバック: PDFをダウンロード保存 → メールアプリを宛先・件名入り済みで起動
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       const isMobile = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
       if (isMobile) {
-        const url = URL.createObjectURL(pdfBlob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        const toMsg = emailTo ? `\n送信先: ${emailTo}` : "";
-        alert(`「${fileName}」を保存しました。\nメールアプリで添付して送信してください。${toMsg}`);
+        // PDFダウンロード直後にメールアプリを起動（宛先・件名を自動入力）
+        const body = encodeURIComponent(`${fileName} を添付してください。`);
+        const to = encodeURIComponent(emailTo ?? "");
+        const sub = encodeURIComponent(subject);
+        window.location.href = `mailto:${to}?subject=${sub}&body=${body}`;
         return;
       }
 
@@ -471,38 +485,32 @@ export default function TaskPage() {
   }));
 
   return (
-    <div className={`px-2 ${isCalendar ? "h-[100dvh] flex flex-col pt-4 pb-4 overflow-hidden" : "max-w-2xl mx-auto py-6 pb-10"}`}>
+    <div className={`px-2 ${isCalendar ? "h-[100dvh] flex flex-col pt-4 pb-16 overflow-hidden" : "max-w-2xl mx-auto py-6 pb-20"}`}>
 
       {/* ── 設定モーダル ── */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-sm">
-            <h3 className="text-base font-extrabold text-gray-700 mb-4">設定</h3>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm border border-stone-200">
+            <h3 className="text-base font-bold text-stone-700 mb-4 tracking-wide">設定</h3>
             <div className="mb-4">
-              <label className="block text-xs font-bold text-pink-400 mb-1">PDF送信先メールアドレス</label>
+              <label className="block text-xs font-bold text-stone-500 mb-1 tracking-wider uppercase">PDF送信先メールアドレス</label>
               <input
                 type="email"
                 value={emailTo}
                 onChange={(e) => setEmailTo(e.target.value)}
                 placeholder="example@gmail.com"
-                className="w-full px-3 py-2 border-2 border-pink-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:border-pink-400"
+                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm text-stone-700 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400"
               />
             </div>
-            <p className="text-[10px] text-gray-400 mb-5 leading-relaxed">
-              📱 <strong>スマホから送る場合：</strong><br />
-              「PDF送信」ボタンを押すとPDFが保存されます。<br />
-              メールアプリを開いて添付して送信してください。<br />
-              （HTTPS環境では自動でメールアプリが開きます）<br />
-              <br />
-              💻 <strong>PCから送る場合：</strong><br />
-              <code className="bg-gray-100 px-1 rounded">.env.local</code> に<br />
-              SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS を設定してください。
+            <p className="text-[10px] text-stone-400 mb-5 leading-relaxed">
+              スマホ：「PDF送信」でPDFが保存されます。メールアプリで添付してください。<br />
+              PC：<code className="bg-stone-100 px-1 rounded">.env.local</code> にSMTP設定が必要です。
             </p>
             <div className="flex gap-2">
-              <button onClick={() => setShowSettings(false)} className="flex-1 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-400">キャンセル</button>
+              <button onClick={() => setShowSettings(false)} className="flex-1 py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-400 hover:bg-stone-50">キャンセル</button>
               <button
                 onClick={() => { localStorage.setItem("tasuku-email", emailTo); setShowSettings(false); }}
-                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-pink-400 to-purple-400 text-white text-sm font-extrabold"
+                className="flex-1 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold hover:bg-slate-800 transition-colors"
               >
                 保存
               </button>
@@ -513,9 +521,9 @@ export default function TaskPage() {
 
       {/* ── 完了時刻入力モーダル ── */}
       {pendingDoneId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-xs">
-            <h3 className="text-base font-extrabold text-gray-700 mb-4 text-center">作業時間を入力</h3>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-xs border border-stone-200">
+            <h3 className="text-base font-bold text-stone-700 mb-4 text-center tracking-wide">作業時間を入力</h3>
             {[
               { label: "開始", value: pendingStart, set: setPendingStart },
               { label: "終了", value: pendingEnd,   set: setPendingEnd   },
@@ -524,23 +532,23 @@ export default function TaskPage() {
               const mm = value.slice(3, 5) || "00";
               return (
                 <div key={label} className="flex items-center gap-3 mb-3">
-                  <span className="text-sm font-bold text-pink-400 w-10 shrink-0">{label}</span>
+                  <span className="text-sm font-bold text-stone-500 w-10 shrink-0">{label}</span>
                   <div className="flex items-center gap-1 flex-1">
                     <select
                       value={hh}
                       onChange={(e) => set(e.target.value + ":" + mm)}
-                      className="flex-1 px-2 py-2 border-2 border-pink-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-pink-400"
+                      className="flex-1 px-2 py-2 border border-stone-300 rounded-lg text-sm text-stone-700 bg-white focus:outline-none focus:border-slate-500"
                     >
                       <option value="">--</option>
                       {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
                         <option key={h} value={h}>{h}</option>
                       ))}
                     </select>
-                    <span className="font-extrabold text-gray-400 text-sm">時</span>
+                    <span className="font-bold text-stone-400 text-sm">時</span>
                     <select
                       value={mm}
                       onChange={(e) => set((hh || "00") + ":" + e.target.value)}
-                      className="w-20 px-2 py-2 border-2 border-pink-200 rounded-xl text-sm text-gray-700 bg-white focus:outline-none focus:border-pink-400"
+                      className="w-20 px-2 py-2 border border-stone-300 rounded-lg text-sm text-stone-700 bg-white focus:outline-none focus:border-slate-500"
                     >
                       <option value="00">00 分</option>
                       <option value="30">30 分</option>
@@ -552,13 +560,13 @@ export default function TaskPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setPendingDoneId(null)}
-                className="flex-1 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-400 hover:bg-gray-50"
+                className="flex-1 py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-400 hover:bg-stone-50"
               >
                 キャンセル
               </button>
               <button
                 onClick={confirmDone}
-                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-pink-400 to-purple-400 text-white text-sm font-extrabold hover:opacity-90 active:scale-95 transition-all"
+                className="flex-1 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold hover:bg-slate-800 active:scale-95 transition-all"
               >
                 完了にする
               </button>
@@ -568,24 +576,16 @@ export default function TaskPage() {
       )}
       {/* ヘッダー */}
       <header className={`flex items-center justify-between print:hidden ${isCalendar ? "mb-2" : "mb-4"}`}>
-        <h1 className="text-xl font-extrabold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
+        <h1 className="text-lg font-bold text-stone-800 tracking-widest">
           タスク管理
         </h1>
-        <div className="flex items-center gap-2">
-          <select
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value as ViewMode)}
-            className="text-xs font-bold text-pink-500 bg-pink-50 border-2 border-pink-200 rounded-xl px-2 py-1.5 focus:outline-none cursor-pointer appearance-none"
-          >
-            <option value="list">📋 リスト</option>
-            <option value="calendar">📅 カレンダー</option>
-          </select>
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setShowSettings(true)}
             title="設定"
-            className="text-xl leading-none hover:scale-110 active:scale-95 transition-all select-none"
+            className="text-stone-400 hover:text-stone-700 transition-colors select-none"
           >
-            ⚙️
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
           <button
             onClick={requestNotification}
@@ -595,11 +595,17 @@ export default function TaskPage() {
               notifPermission === "denied" ? "ブラウザ設定で許可してください" :
               "通知を有効にする"
             }
-            className={`text-xl leading-none transition-all select-none ${
-              notifPermission === "denied" ? "opacity-25 cursor-not-allowed" : "hover:scale-110 active:scale-95"
+            className={`transition-colors select-none ${
+              notifPermission === "denied" ? "opacity-25 cursor-not-allowed text-stone-300" :
+              notifPermission === "granted" ? "text-slate-700 hover:text-slate-900" : "text-stone-400 hover:text-stone-700"
             }`}
           >
-            {notifPermission === "granted" ? "🔔" : "🔕"}
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {notifPermission === "granted"
+                ? <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></>
+                : <><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></>
+              }
+            </svg>
           </button>
         </div>
       </header>
@@ -609,16 +615,16 @@ export default function TaskPage() {
         <>
           {/* 月ナビゲーション */}
           <div className="flex items-center justify-between mb-2 shrink-0 print:hidden">
-            <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full bg-white border-2 border-pink-200 text-pink-400 font-extrabold text-lg hover:bg-pink-50 active:scale-95 transition-all">‹</button>
-            <span className="text-base font-extrabold text-gray-700">{calYear}年{MONTHS_JA[calMonth]}</span>
-            <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-full bg-white border-2 border-pink-200 text-pink-400 font-extrabold text-lg hover:bg-pink-50 active:scale-95 transition-all">›</button>
-            <button onClick={() => window.print()} className="px-3 py-1 bg-gradient-to-r from-pink-400 to-purple-400 text-white text-xs font-extrabold rounded-xl hover:opacity-90 active:scale-95 transition-all shadow">🖨️ 印刷</button>
+            <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-stone-200 text-stone-500 font-bold text-lg hover:bg-stone-50 active:scale-95 transition-all shadow-sm">‹</button>
+            <span className="text-sm font-bold text-stone-700 tracking-wider">{calYear}年{MONTHS_JA[calMonth]}</span>
+            <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-stone-200 text-stone-500 font-bold text-lg hover:bg-stone-50 active:scale-95 transition-all shadow-sm">›</button>
+            <button onClick={() => window.print()} className="px-3 py-1.5 bg-stone-700 text-white text-xs font-bold rounded-lg hover:bg-stone-800 active:scale-95 transition-all shadow-sm">印刷</button>
             <button
               onClick={sendPdf}
               disabled={sending}
-              className="px-3 py-1 bg-gradient-to-r from-blue-400 to-cyan-400 text-white text-xs font-extrabold rounded-xl hover:opacity-90 active:scale-95 transition-all shadow disabled:opacity-50"
+              className="px-3 py-1.5 bg-slate-600 text-white text-xs font-bold rounded-lg hover:bg-slate-700 active:scale-95 transition-all shadow-sm disabled:opacity-50"
             >
-              {sending ? "送信中…" : "📧 PDF送信"}
+              {sending ? "生成中…" : "PDF送信"}
             </button>
           </div>
 
@@ -643,9 +649,9 @@ export default function TaskPage() {
                       value={cat}
                       checked={inputCategory === cat}
                       onChange={() => setInputCategory(cat)}
-                      className="w-4 h-4 accent-purple-500 cursor-pointer"
+                      className="w-4 h-4 accent-slate-700 cursor-pointer"
                     />
-                    <span className="text-sm font-bold text-gray-600">{CATEGORY_LABELS[cat]}</span>
+                    <span className="text-sm font-bold text-stone-600">{CATEGORY_LABELS[cat]}</span>
                   </label>
                 ))}
               </div>
@@ -657,7 +663,7 @@ export default function TaskPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addTask()}
                 placeholder="新しいタスクを入力..."
-                className="w-full px-4 py-3 border-2 border-pink-200 rounded-2xl bg-white text-gray-700 placeholder-pink-200 focus:outline-none focus:border-pink-400 transition"
+                className="w-full px-4 py-3 border border-stone-300 rounded-xl bg-white text-stone-700 placeholder-stone-300 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition"
               />
 
               {/* 期限クイック選択 + 重要 */}
@@ -669,26 +675,26 @@ export default function TaskPage() {
                         key={label}
                         type="button"
                         onClick={() => setDueDate(value)}
-                        className={`px-2.5 py-1 rounded-xl text-xs font-bold border-2 transition-all ${
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
                           dueDate === value
-                            ? "bg-pink-400 border-pink-400 text-white"
-                            : "bg-white border-pink-200 text-pink-400 hover:bg-pink-50"
+                            ? "bg-slate-700 border-slate-700 text-white"
+                            : "bg-white border-stone-300 text-stone-600 hover:bg-stone-50"
                         }`}
                       >
                         {label}
                       </button>
                     ))}
                     {dueDate && (
-                      <button type="button" onClick={() => setDueDate("")} className="px-2 py-1 rounded-xl text-xs font-bold border-2 border-gray-200 text-gray-400 bg-white">✕</button>
+                      <button type="button" onClick={() => setDueDate("")} className="px-2 py-1 rounded-lg text-xs font-bold border border-stone-200 text-stone-400 bg-white">✕</button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 border-2 border-pink-200 rounded-xl bg-white">
-                    <span className="text-xs font-bold text-pink-300">期限</span>
+                  <div className="flex items-center gap-2 px-3 py-1.5 border border-stone-300 rounded-xl bg-white">
+                    <span className="text-xs font-bold text-stone-400">期限</span>
                     <input
                       type="date"
                       value={dueDate}
                       onChange={(e) => setDueDate(e.target.value)}
-                      className="text-sm text-gray-600 bg-transparent focus:outline-none cursor-pointer"
+                      className="text-sm text-stone-600 bg-transparent focus:outline-none cursor-pointer"
                     />
                     {previewDue && (
                       <span className={`text-xs font-bold shrink-0 ${previewDue.colorClass}`}>{previewDue.text}</span>
@@ -700,15 +706,15 @@ export default function TaskPage() {
                     type="checkbox"
                     checked={important}
                     onChange={(e) => setImportant(e.target.checked)}
-                    className="w-4 h-4 accent-pink-500 cursor-pointer"
+                    className="w-4 h-4 accent-rose-700 cursor-pointer"
                   />
-                  <span className="text-sm font-bold text-pink-400">重要</span>
+                  <span className="text-sm font-bold text-rose-700">重要</span>
                 </label>
               </div>
             </div>
             <button
               onClick={addTask}
-              className="px-4 py-3 bg-gradient-to-br from-pink-400 to-purple-400 text-white font-extrabold rounded-2xl hover:from-pink-500 hover:to-purple-500 active:scale-95 transition-all shadow-md"
+              className="px-4 py-3 bg-slate-700 text-white font-bold rounded-xl hover:bg-slate-800 active:scale-95 transition-all shadow-sm"
             >
               追加
             </button>
@@ -720,10 +726,10 @@ export default function TaskPage() {
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-5 py-1.5 rounded-full text-sm font-extrabold transition-all ${
+                className={`px-5 py-1.5 rounded-lg text-sm font-bold transition-all ${
                   tab === t
-                    ? "bg-gradient-to-r from-pink-400 to-purple-400 text-white shadow"
-                    : "bg-white border-2 border-pink-200 text-pink-400 hover:bg-pink-50"
+                    ? "bg-slate-800 text-white shadow-sm"
+                    : "bg-white border border-stone-200 text-stone-500 hover:bg-stone-50"
                 }`}
               >
                 {t === "todo" ? "タスク" : "完了"}
@@ -741,16 +747,16 @@ export default function TaskPage() {
               return (
                 <div key={cat} className="flex flex-col gap-1.5 min-w-0">
                   {/* 列ヘッダー */}
-                  <div className="text-center text-xs font-extrabold text-white bg-gradient-to-r from-pink-400 to-purple-400 rounded-xl py-1 px-1 shadow-sm">
+                  <div className={`text-center text-xs font-bold text-white rounded-lg py-1 px-1 shadow-sm ${CATEGORY_COLOR[cat]}`}>
                     {CATEGORY_LABELS[cat]}
-                    <span className="ml-1 opacity-70 text-[10px]">{list.length}</span>
+                    <span className="ml-1 opacity-60 text-[10px]">{list.length}</span>
                   </div>
 
                   {/* タスクカード */}
                   {list.length === 0 && (
-                    <div className="text-center py-6 text-pink-200">
-                      <p className="text-2xl">✿</p>
-                      <p className="text-[10px] font-bold mt-1">なし</p>
+                    <div className="text-center py-6 text-stone-300">
+                      <p className="text-lg">—</p>
+                      <p className="text-[10px] mt-1">なし</p>
                     </div>
                   )}
                   {list.map((task) => {
@@ -771,13 +777,13 @@ export default function TaskPage() {
                         <div className="flex items-start gap-1">
                           <span className="flex-1 min-w-0 text-[11px] font-bold text-gray-700 leading-snug break-all">
                             {task.important && !task.done && (
-                              <span className="inline-block text-[8px] font-extrabold text-white bg-gradient-to-r from-pink-400 to-red-400 px-1 rounded mr-0.5 leading-tight">重</span>
+                              <span className="inline-block text-[8px] font-bold text-white bg-rose-700 px-1 rounded mr-0.5 leading-tight">重</span>
                             )}
-                            <span className={task.done ? "line-through text-gray-400" : ""}>{task.title}</span>
+                            <span className={task.done ? "line-through text-stone-300" : ""}>{task.title}</span>
                           </span>
                           <button
                             onClick={() => deleteTask(task.id)}
-                            className="shrink-0 w-4 h-4 flex items-center justify-center text-pink-200 hover:text-red-400 transition-colors text-base leading-none"
+                            className="shrink-0 w-4 h-4 flex items-center justify-center text-stone-300 hover:text-red-500 transition-colors text-base leading-none"
                           >
                             ×
                           </button>
@@ -785,7 +791,7 @@ export default function TaskPage() {
                             type="checkbox"
                             checked={task.done}
                             onChange={() => handleDoneChange(task.id, task.done)}
-                            className="shrink-0 w-4 h-4 accent-pink-400 cursor-pointer mt-0.5"
+                            className="shrink-0 w-4 h-4 accent-slate-600 cursor-pointer mt-0.5"
                           />
                         </div>
                         {tab === "done" && task.doneAt && (
@@ -807,12 +813,39 @@ export default function TaskPage() {
           </div>
 
           {tasks.length > 0 && (
-            <p className="text-center text-xs font-bold text-pink-300 mt-6">
-              {doneCount} / {tasks.length} 完了 ✿
+            <p className="text-center text-xs text-stone-400 mt-6 tracking-wider">
+              {doneCount} / {tasks.length} 完了
             </p>
           )}
         </>
       )}
+
+      {/* ── 下部タブバー ── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-stone-200 flex print:hidden">
+        {([
+          { mode: "list" as ViewMode,
+            label: "リスト",
+            icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          },
+          { mode: "calendar" as ViewMode,
+            label: "カレンダー",
+            icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          },
+        ]).map(({ mode, icon, label }) => (
+          <button
+            key={mode}
+            onClick={() => setViewMode(mode)}
+            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+              viewMode === mode
+                ? "text-slate-800"
+                : "text-stone-400 hover:text-stone-600"
+            }`}
+          >
+            {icon}
+            <span className={`text-[10px] font-bold tracking-wide ${viewMode === mode ? "text-slate-800" : "text-stone-400"}`}>{label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
