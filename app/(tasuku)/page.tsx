@@ -636,88 +636,88 @@ export default function TaskPage() {
       {!isCalendar && (
         <>
           {/* 入力エリア */}
-          <div className="flex gap-2 mb-4 items-start">
-            <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="flex flex-col gap-2 mb-4">
 
-              {/* カテゴリ選択（1つだけ）— 入力欄の上 */}
-              <div className="flex items-center gap-4 flex-wrap">
-                {CATEGORIES.map((cat) => (
-                  <label key={cat} className="flex items-center gap-1.5 cursor-pointer select-none">
-                    <input
-                      type="radio"
-                      name="inputCategory"
-                      value={cat}
-                      checked={inputCategory === cat}
-                      onChange={() => setInputCategory(cat)}
-                      className="w-4 h-4 accent-slate-700 cursor-pointer"
-                    />
-                    <span className="text-sm font-bold text-stone-600">{CATEGORY_LABELS[cat]}</span>
-                  </label>
-                ))}
-              </div>
+            {/* カテゴリ選択 */}
+            <div className="flex items-center gap-4 flex-wrap">
+              {CATEGORIES.map((cat) => (
+                <label key={cat} className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="inputCategory"
+                    value={cat}
+                    checked={inputCategory === cat}
+                    onChange={() => setInputCategory(cat)}
+                    className="w-4 h-4 accent-slate-700 cursor-pointer"
+                  />
+                  <span className="text-sm font-bold text-stone-600">{CATEGORY_LABELS[cat]}</span>
+                </label>
+              ))}
+            </div>
 
-              {/* タスク入力欄 */}
+            {/* 入力欄 ＋ 右列（重要・追加） */}
+            <div className="flex gap-2 items-stretch">
               <input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addTask()}
                 placeholder="新しいタスクを入力..."
-                className="w-full px-4 py-3 border border-stone-300 rounded-xl bg-white text-stone-700 placeholder-stone-300 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition"
+                className="flex-1 min-w-0 px-4 py-3 border border-stone-300 rounded-xl bg-white text-stone-700 placeholder-stone-300 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition"
               />
-
-              {/* 期限クイック選択 + 重要 */}
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {quickDates.map(({ label, value }) => (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => setDueDate(value)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
-                          dueDate === value
-                            ? "bg-slate-700 border-slate-700 text-white"
-                            : "bg-white border-stone-300 text-stone-600 hover:bg-stone-50"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                    {dueDate && (
-                      <button type="button" onClick={() => setDueDate("")} className="px-2 py-1 rounded-lg text-xs font-bold border border-stone-200 text-stone-400 bg-white">✕</button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 border border-stone-300 rounded-xl bg-white">
-                    <span className="text-xs font-bold text-stone-400">期限</span>
-                    <input
-                      type="date"
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className="text-sm text-stone-600 bg-transparent focus:outline-none cursor-pointer"
-                    />
-                    {previewDue && (
-                      <span className={`text-xs font-bold shrink-0 ${previewDue.colorClass}`}>{previewDue.text}</span>
-                    )}
-                  </div>
-                </div>
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <div className="flex flex-col gap-1 shrink-0">
+                <label className="flex items-center justify-center gap-1 cursor-pointer select-none border border-rose-200 rounded-lg px-2 py-1 bg-rose-50">
                   <input
                     type="checkbox"
                     checked={important}
                     onChange={(e) => setImportant(e.target.checked)}
-                    className="w-4 h-4 accent-rose-700 cursor-pointer"
+                    className="w-3.5 h-3.5 accent-rose-700 cursor-pointer"
                   />
-                  <span className="text-sm font-bold text-rose-700">重要</span>
+                  <span className="text-xs font-bold text-rose-700">重要</span>
                 </label>
+                <button
+                  onClick={addTask}
+                  className="flex-1 px-4 bg-slate-700 text-white font-bold rounded-xl hover:bg-slate-800 active:scale-95 transition-all shadow-sm text-sm"
+                >
+                  追加
+                </button>
               </div>
             </div>
-            <button
-              onClick={addTask}
-              className="px-4 py-3 bg-slate-700 text-white font-bold rounded-xl hover:bg-slate-800 active:scale-95 transition-all shadow-sm"
-            >
-              追加
-            </button>
+
+            {/* 期限日付picker */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border border-stone-300 rounded-xl bg-white">
+              <span className="text-xs font-bold text-stone-400 shrink-0">期限</span>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="flex-1 text-sm text-stone-600 bg-transparent focus:outline-none cursor-pointer"
+              />
+              {previewDue && (
+                <span className={`text-xs font-bold shrink-0 ${previewDue.colorClass}`}>{previewDue.text}</span>
+              )}
+              {dueDate && (
+                <button type="button" onClick={() => setDueDate("")} className="shrink-0 text-xs text-stone-400 hover:text-stone-600">✕</button>
+              )}
+            </div>
+
+            {/* クイック日付（3列グリッドで月末は常に今週末の横） */}
+            <div className="grid grid-cols-3 gap-1">
+              {quickDates.map(({ label, value }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setDueDate(value)}
+                  className={`py-1 rounded-lg text-xs font-bold border transition-all ${
+                    dueDate === value
+                      ? "bg-slate-700 border-slate-700 text-white"
+                      : "bg-white border-stone-300 text-stone-600 hover:bg-stone-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* タブ */}
