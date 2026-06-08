@@ -185,12 +185,12 @@ function CalendarView({
               return (
                 <div
                   key={`${day}-${cat}`}
-                  className={`border-b border-stone-100 border-l border-stone-100 px-1 py-0.5 flex flex-col justify-center gap-px min-h-[1.4rem] print:border print:border-stone-400 ${rowBg}`}
+                  className={`border-b border-stone-100 border-l border-stone-100 px-1 py-0.5 flex flex-col justify-start gap-0.5 min-h-[1.4rem] print:border print:border-stone-400 ${rowBg}`}
                 >
                   {dayTasks.map((t) => (
                     <div
                       key={t.id}
-                      className="text-[10px] font-bold leading-tight truncate text-stone-700"
+                      className="text-[10px] font-bold leading-snug break-all text-stone-700"
                     >
                       {t.title}
                       {t.startTime && (
