@@ -218,6 +218,7 @@ export default function TaskPage() {
   const [pendingEnd, setPendingEnd] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [emailTo, setEmailTo] = useState("");
+  const [fontSize, setFontSize] = useState<"small" | "medium" | "large">("medium");
   const [sending, setSending] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -263,7 +264,13 @@ export default function TaskPage() {
 
   useEffect(() => {
     setEmailTo(localStorage.getItem("tasuku-email") ?? "");
+    setFontSize((localStorage.getItem("tasuku-fontsize") as "small" | "medium" | "large") ?? "medium");
   }, []);
+
+  useEffect(() => {
+    const sizes = { small: "13px", medium: "16px", large: "19px" };
+    document.documentElement.style.fontSize = sizes[fontSize];
+  }, [fontSize]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -493,6 +500,24 @@ export default function TaskPage() {
           <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm border border-stone-200">
             <h3 className="text-base font-bold text-stone-700 mb-4 tracking-wide">設定</h3>
             <div className="mb-4">
+              <label className="block text-xs font-bold text-stone-500 mb-2 tracking-wider uppercase">文字サイズ</label>
+              <div className="flex gap-2">
+                {([["small", "小"], ["medium", "中"], ["large", "大"]] as const).map(([val, lbl]) => (
+                  <button
+                    key={val}
+                    onClick={() => setFontSize(val)}
+                    className={`flex-1 py-2 rounded-lg border text-sm font-bold transition-colors ${
+                      fontSize === val
+                        ? "bg-slate-700 border-slate-700 text-white"
+                        : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-4">
               <label className="block text-xs font-bold text-stone-500 mb-1 tracking-wider uppercase">PDF送信先メールアドレス</label>
               <input
                 type="email"
@@ -509,7 +534,11 @@ export default function TaskPage() {
             <div className="flex gap-2">
               <button onClick={() => setShowSettings(false)} className="flex-1 py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-400 hover:bg-stone-50">キャンセル</button>
               <button
-                onClick={() => { localStorage.setItem("tasuku-email", emailTo); setShowSettings(false); }}
+                onClick={() => {
+                  localStorage.setItem("tasuku-email", emailTo);
+                  localStorage.setItem("tasuku-fontsize", fontSize);
+                  setShowSettings(false);
+                }}
                 className="flex-1 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold hover:bg-slate-800 transition-colors"
               >
                 保存
@@ -656,7 +685,7 @@ export default function TaskPage() {
             </div>
 
             {/* 入力欄 ＋ 右列（重要・追加） */}
-            <div className="flex gap-2 items-stretch">
+            <div className="flex gap-2 items-end">
               <input
                 ref={inputRef}
                 value={input}
@@ -677,7 +706,7 @@ export default function TaskPage() {
                 </label>
                 <button
                   onClick={addTask}
-                  className="flex-1 px-4 bg-slate-700 text-white font-bold rounded-xl hover:bg-slate-800 active:scale-95 transition-all shadow-sm text-sm"
+                  className="px-4 py-3 bg-slate-700 text-white font-bold rounded-xl hover:bg-slate-800 active:scale-95 transition-all shadow-sm text-sm"
                 >
                   追加
                 </button>
