@@ -137,11 +137,11 @@ function CalendarView({
         }}
       >
         {/* ── ヘッダー行 ── */}
-        <div className="border-b border-stone-300 bg-stone-100" />
+        <div className="border-b border-stone-300 bg-stone-100 print:border print:border-stone-500" />
         {CATEGORIES.map((cat) => (
           <div
             key={`h-${cat}`}
-            className={`border-b border-stone-300 border-l border-stone-200 flex items-center justify-center text-xs font-bold text-white ${CATEGORY_COLOR[cat]}`}
+            className={`border-b border-stone-300 border-l border-stone-200 flex items-center justify-center text-xs font-bold text-white print:border print:border-stone-500 print:text-stone-800 print:bg-stone-100 ${CATEGORY_COLOR[cat]}`}
           >
             {CATEGORY_LABELS[cat]}
           </div>
@@ -162,7 +162,7 @@ function CalendarView({
             // 日付セル
             <div
               key={`d-${day}`}
-              className={`flex flex-col items-center justify-center border-b border-stone-100 min-h-[1.4rem] ${rowBg} ${dateColor}`}
+              className={`flex flex-col items-center justify-center border-b border-stone-100 min-h-[1.4rem] print:border print:border-stone-400 ${rowBg} ${dateColor}`}
             >
               <span className={`text-[11px] font-bold leading-none ${isToday ? "text-slate-800 underline underline-offset-2" : ""}`}>{day}</span>
               <span className={`text-[9px] leading-none ${isToday ? "text-slate-600" : ""}`}>{DAY_JA[dow]}</span>
@@ -176,14 +176,14 @@ function CalendarView({
               return (
                 <div
                   key={`${day}-${cat}`}
-                  className={`border-b border-stone-100 border-l border-stone-100 px-1 py-0.5 flex flex-col justify-center gap-px min-h-[1.4rem] ${rowBg}`}
+                  className={`border-b border-stone-100 border-l border-stone-100 px-1 py-0.5 flex flex-col justify-center gap-px min-h-[1.4rem] print:border print:border-stone-400 ${rowBg}`}
                 >
                   {dayTasks.map((t) => (
                     <div
                       key={t.id}
                       className={`text-[10px] font-bold leading-tight truncate ${
                         t.important
-                          ? "text-white bg-rose-700 px-0.5 rounded"
+                          ? "text-white bg-rose-700 px-0.5 rounded print:text-rose-900 print:bg-rose-100"
                           : "text-stone-700"
                       }`}
                     >
@@ -376,9 +376,28 @@ export default function TaskPage() {
     if (!el) return;
     setSending(true);
     try {
+      // フォント読み込み完了を待つ
+      await document.fonts.ready;
+
       const html2canvas = (await import("html2canvas")).default;
       const { jsPDF } = await import("jspdf");
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+
+      // overflow-y:auto のスクロール要素は visible にしてから全体キャプチャ
+      const prevStyle = { height: el.style.height, overflow: el.style.overflow };
+      el.style.height = el.scrollHeight + "px";
+      el.style.overflow = "visible";
+
+      const canvas = await html2canvas(el, {
+        scale: 1.5,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      el.style.height = prevStyle.height;
+      el.style.overflow = prevStyle.overflow;
+
       const imgData = canvas.toDataURL("image/jpeg", 0.85);
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pw = pdf.internal.pageSize.getWidth();
@@ -492,7 +511,7 @@ export default function TaskPage() {
   }));
 
   return (
-    <div className={`px-2 ${isCalendar ? "h-[100dvh] flex flex-col pt-4 pb-16 overflow-hidden" : "max-w-2xl mx-auto py-6 pb-20"}`}>
+    <div className={`px-2 overflow-x-hidden ${isCalendar ? "h-[100dvh] flex flex-col pt-4 pb-16 overflow-hidden" : "max-w-2xl mx-auto py-6 pb-20"}`}>
 
       {/* ── 設定モーダル ── */}
       {showSettings && (

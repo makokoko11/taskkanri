@@ -2,6 +2,8 @@
 
 body {
   font-family: var(--font-biz-udp), "BIZ UDPGothic", sans-serif;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 @media print {
