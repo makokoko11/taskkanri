@@ -138,7 +138,6 @@ function CalendarView({
 
       {/* 4列グリッド: 日付 | 連町 | まちづくり | 子ども会 */}
       <div
-        className="flex-1 min-h-0"
         style={{
           display: "grid",
           gridTemplateColumns: "2.2rem 1fr 1fr 1fr",
@@ -222,7 +221,6 @@ export default function TaskPage() {
   const [pendingStart, setPendingStart] = useState("");
   const [pendingEnd, setPendingEnd] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [emailTo, setEmailTo] = useState("");
   const [fontSize, setFontSize] = useState<"small" | "medium" | "large">("medium");
   const [sending, setSending] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default");
@@ -268,7 +266,6 @@ export default function TaskPage() {
   }, []);
 
   useEffect(() => {
-    setEmailTo(localStorage.getItem("tasuku-email") ?? "");
     setFontSize((localStorage.getItem("tasuku-fontsize") as "small" | "medium" | "large") ?? "medium");
   }, []);
 
@@ -377,70 +374,33 @@ export default function TaskPage() {
   };
 
   const sendPdf = async () => {
-    const el = document.getElementById("print-calendar");
-    if (!el) return;
     setSending(true);
     try {
-      // フォント読み込み完了を待つ
-      await document.fonts.ready;
-
-      const html2canvas = (await import("html2canvas")).default;
-      const { jsPDF } = await import("jspdf");
-
-      // flex-1/min-h-0/overflow-y:auto の制約を外すためクローンして body 直下に配置
-      const clone = el.cloneNode(true) as HTMLElement;
-      clone.style.cssText = [
-        `position:fixed`,
-        `top:0`, `left:0`,
-        `width:${el.offsetWidth}px`,
-        `height:auto`,
-        `max-height:none`,
-        `overflow:visible`,
-        `flex:none`,
-        `z-index:-1`,
-        `background:white`,
-      ].join(";");
-      document.body.appendChild(clone);
-
-      // リフロー待機
-      await new Promise<void>((r) => setTimeout(r, 150));
-
-      const canvas = await html2canvas(clone, {
-        scale: 1.5,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        width: el.offsetWidth,
-        height: clone.scrollHeight,
-      });
-
-      document.body.removeChild(clone);
-
-      const imgData = canvas.toDataURL("image/jpeg", 0.85);
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pw = pdf.internal.pageSize.getWidth();
-      const ph = (canvas.height / canvas.width) * pw;
-      pdf.addImage(imgData, "JPEG", 0, 0, pw, Math.min(ph, pdf.internal.pageSize.getHeight()));
+      const [{ pdf }, { CalendarPDFDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("./CalendarPDF"),
+      ]);
 
       const fileName = `calendar-${calYear}-${String(calMonth + 1).padStart(2, "0")}.pdf`;
       const subject = `${calYear}年${MONTHS_JA[calMonth]} カレンダー`;
-      const pdfBlob = pdf.output("blob");
 
-      // スマホ: Web Share API でメールアプリにPDF添付して渡す（HTTPS/localhostで確実に動作）
-      if (navigator.share) {
-        const shareFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+      const blob = await pdf(
+        <CalendarPDFDocument tasks={tasks} year={calYear} month={calMonth} />
+      ).toBlob();
+
+      // Web Share API（HTTPS/localhost、ファイル共有対応端末）
+      const shareFile = new File([blob], fileName, { type: "application/pdf" });
+      if (navigator.share && navigator.canShare?.({ files: [shareFile] })) {
         try {
           await navigator.share({ files: [shareFile], title: subject });
           return;
         } catch (shareErr) {
-          if ((shareErr as Error).name === "AbortError") return; // ユーザーがキャンセル
-          // ファイル共有非対応なら下のフォールバックへ
+          if ((shareErr as Error).name === "AbortError") return;
         }
       }
 
-      // フォールバック: PDFをダウンロード保存 → メールアプリを宛先・件名入り済みで起動
-      const url = URL.createObjectURL(pdfBlob);
+      // フォールバック: ダウンロード
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = fileName;
@@ -448,29 +408,6 @@ export default function TaskPage() {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      const isMobile = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
-      if (isMobile) {
-        // PDFダウンロード直後にメールアプリを起動（宛先・件名を自動入力）
-        const body = encodeURIComponent(`${fileName} を添付してください。`);
-        const to = encodeURIComponent(emailTo ?? "");
-        const sub = encodeURIComponent(subject);
-        window.location.href = `mailto:${to}?subject=${sub}&body=${body}`;
-        return;
-      }
-
-      // PC: サーバーAPI経由でメール送信
-      if (!emailTo) { setShowSettings(true); return; }
-      const base64 = pdf.output("datauristring").split(",")[1];
-      const res = await fetch("/api/send-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdf: base64, to: emailTo, subject }),
-      });
-      if (res.ok) alert("送信しました");
-      else {
-        const err = await res.json();
-        alert(`送信失敗: ${err.error ?? "不明なエラー"}`);
-      }
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       console.error(e);
@@ -555,25 +492,15 @@ export default function TaskPage() {
                 ))}
               </div>
             </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-stone-500 mb-1 tracking-wider uppercase">PDF送信先メールアドレス</label>
-              <input
-                type="email"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-                placeholder="example@gmail.com"
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm text-stone-700 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400"
-              />
-            </div>
             <p className="text-[10px] text-stone-400 mb-5 leading-relaxed">
-              スマホ：「PDF送信」でPDFが保存されます。メールアプリで添付してください。<br />
-              PC：<code className="bg-stone-100 px-1 rounded">.env.local</code> にSMTP設定が必要です。
+              「PDF送信」でPDFを生成します。<br />
+              スマホ：共有メニューが開きます（メール・LINE等へ送信可能）。<br />
+              PC：PDFが自動ダウンロードされます。
             </p>
             <div className="flex gap-2">
               <button onClick={() => setShowSettings(false)} className="flex-1 py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-400 hover:bg-stone-50">キャンセル</button>
               <button
                 onClick={() => {
-                  localStorage.setItem("tasuku-email", emailTo);
                   localStorage.setItem("tasuku-fontsize", fontSize);
                   setShowSettings(false);
                 }}
