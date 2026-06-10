@@ -109,6 +109,52 @@ interface Template {
   category: Category;
 }
 
+type Recurrence =
+  | { type: "weekly"; dow: number }
+  | { type: "monthly_nth"; nth: number; dow: number }
+  | { type: "monthly_day"; day: number }
+  | { type: "monthly_last" };
+
+interface RecurringTask {
+  id: string;
+  title: string;
+  category: Category;
+  important: boolean;
+  recurrence: Recurrence;
+  until: string;
+}
+
+function isNthWeekday(date: Date, nth: number, dow: number): boolean {
+  if (date.getDay() !== dow) return false;
+  return Math.ceil(date.getDate() / 7) === nth;
+}
+
+function generateDates(recurrence: Recurrence, untilYearMonth: string): string[] {
+  const today = new Date();
+  const [uy, um] = untilYearMonth.split("-").map(Number);
+  const untilDate = new Date(uy, um, 0); // その月の末日
+  const result: string[] = [];
+  const cur = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  while (cur <= untilDate) {
+    let matches = false;
+    if (recurrence.type === "weekly") {
+      matches = cur.getDay() === recurrence.dow;
+    } else if (recurrence.type === "monthly_nth") {
+      matches = isNthWeekday(cur, recurrence.nth, recurrence.dow);
+    } else if (recurrence.type === "monthly_day") {
+      matches = cur.getDate() === recurrence.day;
+    } else {
+      const next = new Date(cur); next.setDate(next.getDate() + 1);
+      matches = next.getMonth() !== cur.getMonth();
+    }
+    if (matches) {
+      result.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return result;
+}
+
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let field = "";
@@ -264,6 +310,19 @@ export default function TaskPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [templateInput, setTemplateInput] = useState("");
   const [templateCategory, setTemplateCategory] = useState<Category>("rencho");
+  const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
+  const [recurringTitle, setRecurringTitle] = useState("");
+  const [recurringType, setRecurringType] = useState<"weekly" | "monthly_nth" | "monthly_day" | "monthly_last">("weekly");
+  const [recurringDow, setRecurringDow] = useState(1);
+  const [recurringNth, setRecurringNth] = useState(1);
+  const [recurringDay, setRecurringDay] = useState(1);
+  const [recurringCategory, setRecurringCategory] = useState<Category>("rencho");
+  const [recurringImportant, setRecurringImportant] = useState(false);
+  const [recurringUntil, setRecurringUntil] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 3);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [fontSize, setFontSize] = useState<"small" | "medium" | "large">("medium");
   const [sending, setSending] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "ok" | "error">("idle");
@@ -327,6 +386,13 @@ export default function TaskPage() {
       const saved = localStorage.getItem("tasuku-templates");
       if (saved) setTemplates(JSON.parse(saved));
     } catch { localStorage.removeItem("tasuku-templates"); }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("tasuku-recurring");
+      if (saved) setRecurringTasks(JSON.parse(saved));
+    } catch { localStorage.removeItem("tasuku-recurring"); }
   }, []);
 
   useEffect(() => {
@@ -494,6 +560,46 @@ export default function TaskPage() {
 
   const deleteTemplate = (id: string) =>
     persistTemplates(templates.filter((t) => t.id !== id));
+
+  const addRecurring = () => {
+    const title = recurringTitle.trim();
+    if (!title) return;
+    const recurrence: Recurrence =
+      recurringType === "weekly"
+        ? { type: "weekly", dow: recurringDow }
+        : recurringType === "monthly_nth"
+          ? { type: "monthly_nth", nth: recurringNth, dow: recurringDow }
+          : recurringType === "monthly_day"
+            ? { type: "monthly_day", day: recurringDay }
+            : { type: "monthly_last" };
+    const dates = generateDates(recurrence, recurringUntil);
+    if (dates.length === 0) { alert("該当する日付がありません"); return; }
+    const newTasks: Task[] = dates.map((dateStr) => ({
+      id: crypto.randomUUID(),
+      title,
+      done: false,
+      important: recurringImportant,
+      createdAt: Date.now(),
+      dueDate: dateStr,
+      categories: [recurringCategory],
+    }));
+    const merged = [...tasks, ...newTasks];
+    persist(merged);
+    newTasks.forEach((t) => pushToGAS("upsert", { id: t.id, title: t.title, status: "todo" }));
+    const newDef: RecurringTask = { id: crypto.randomUUID(), title, category: recurringCategory, important: recurringImportant, recurrence, until: recurringUntil };
+    const nextDefs = [...recurringTasks, newDef];
+    setRecurringTasks(nextDefs);
+    localStorage.setItem("tasuku-recurring", JSON.stringify(nextDefs));
+    setRecurringTitle("");
+    setRecurringImportant(false);
+    alert(`${dates.length}件のタスクを追加しました`);
+  };
+
+  const deleteRecurring = (id: string) => {
+    const next = recurringTasks.filter((t) => t.id !== id);
+    setRecurringTasks(next);
+    localStorage.setItem("tasuku-recurring", JSON.stringify(next));
+  };
 
   const applyTemplate = (tmpl: Template) => {
     const newTask: Task = {
@@ -783,7 +889,7 @@ export default function TaskPage() {
       {/* ── 設定モーダル ── */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm border border-stone-200">
+          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm border border-stone-200 max-h-[88vh] overflow-y-auto">
             <h3 className="text-base font-bold text-stone-700 mb-4 tracking-wide">設定</h3>
             <div className="mb-4">
               <label className="block text-xs font-bold text-stone-500 mb-2 tracking-wider uppercase">文字サイズ</label>
@@ -856,6 +962,124 @@ export default function TaskPage() {
                     <span className={`text-[10px] font-bold text-white px-1 py-0.5 rounded shrink-0 ${CATEGORY_COLOR[tmpl.category]}`}>{CATEGORY_SHORT[tmpl.category]}</span>
                     <span className="flex-1 text-xs text-stone-600 truncate">{tmpl.title}</span>
                     <button onClick={() => deleteTemplate(tmpl.id)} className="shrink-0 text-stone-300 hover:text-red-500 font-bold text-sm leading-none">×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-stone-500 mb-2 tracking-wider uppercase">定期タスク</label>
+              <input
+                value={recurringTitle}
+                onChange={(e) => setRecurringTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addRecurring()}
+                placeholder="タスク名"
+                className="w-full px-2 py-1.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-slate-400 mb-2"
+              />
+              <div className="flex gap-1 mb-2">
+                <button
+                  onClick={() => setRecurringType("weekly")}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors ${recurringType === "weekly" ? "bg-slate-700 border-slate-700 text-white" : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+                >毎週</button>
+                <button
+                  onClick={() => { if (recurringType === "weekly") setRecurringType("monthly_nth"); }}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors ${recurringType !== "weekly" ? "bg-slate-700 border-slate-700 text-white" : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+                >毎月</button>
+              </div>
+              {recurringType !== "weekly" && (
+                <div className="flex gap-1 mb-2">
+                  {(["monthly_nth", "monthly_day", "monthly_last"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setRecurringType(t)}
+                      className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-colors ${recurringType === t ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}
+                    >
+                      {t === "monthly_nth" ? "第N曜日" : t === "monthly_day" ? "○日" : "月末"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1 mb-2">
+                {recurringType === "monthly_nth" && (
+                  <select
+                    value={recurringNth}
+                    onChange={(e) => setRecurringNth(Number(e.target.value))}
+                    className="px-2 py-1.5 text-xs border border-stone-300 rounded-lg bg-white text-stone-700"
+                  >
+                    {[1,2,3,4].map((n) => <option key={n} value={n}>第{n}</option>)}
+                  </select>
+                )}
+                {(recurringType === "weekly" || recurringType === "monthly_nth") && (
+                  <select
+                    value={recurringDow}
+                    onChange={(e) => setRecurringDow(Number(e.target.value))}
+                    className="flex-1 px-2 py-1.5 text-xs border border-stone-300 rounded-lg bg-white text-stone-700"
+                  >
+                    {DAY_JA.map((d, i) => <option key={i} value={i}>{d}曜日</option>)}
+                  </select>
+                )}
+                {recurringType === "monthly_day" && (
+                  <select
+                    value={recurringDay}
+                    onChange={(e) => setRecurringDay(Number(e.target.value))}
+                    className="flex-1 px-2 py-1.5 text-xs border border-stone-300 rounded-lg bg-white text-stone-700"
+                  >
+                    {Array.from({length: 31}, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}日</option>)}
+                  </select>
+                )}
+                {recurringType === "monthly_last" && (
+                  <span className="flex-1 px-2 py-1.5 text-xs text-stone-500 border border-stone-200 rounded-lg bg-stone-50">毎月末日</span>
+                )}
+              </div>
+              <div className="flex gap-1 mb-2 items-center">
+                <select
+                  value={recurringCategory}
+                  onChange={(e) => setRecurringCategory(e.target.value as Category)}
+                  className="flex-1 px-2 py-1.5 text-xs border border-stone-300 rounded-lg bg-white text-stone-700"
+                >
+                  {CATEGORIES.map((cat) => <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>)}
+                </select>
+                <label className="flex items-center gap-1 cursor-pointer px-2 py-1.5 border border-rose-200 rounded-lg bg-rose-50 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={recurringImportant}
+                    onChange={(e) => setRecurringImportant(e.target.checked)}
+                    className="w-3 h-3 accent-rose-700 cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-rose-700">重要</span>
+                </label>
+              </div>
+              <div className="flex gap-1 mb-2 items-center">
+                <span className="text-xs text-stone-500 shrink-0">〜</span>
+                <input
+                  type="month"
+                  value={recurringUntil}
+                  onChange={(e) => setRecurringUntil(e.target.value)}
+                  className="flex-1 px-2 py-1.5 text-xs border border-stone-300 rounded-lg bg-white text-stone-700 focus:outline-none focus:border-slate-400"
+                />
+                <span className="text-xs text-stone-400 shrink-0">まで</span>
+                <button
+                  onClick={addRecurring}
+                  className="px-2 py-1.5 bg-slate-700 text-white text-xs font-bold rounded-lg hover:bg-slate-800 shrink-0"
+                >追加</button>
+              </div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {recurringTasks.length === 0 && <p className="text-xs text-stone-300 text-center py-2">定期タスクなし</p>}
+                {recurringTasks.map((rt) => (
+                  <div key={rt.id} className="flex items-center gap-1 px-2 py-1 bg-stone-50 rounded-lg">
+                    <span className={`text-[10px] font-bold text-white px-1 py-0.5 rounded shrink-0 ${CATEGORY_COLOR[rt.category ?? "rencho"]}`}>{CATEGORY_SHORT[rt.category ?? "rencho"]}</span>
+                    {rt.important && <span className="text-[10px] font-bold text-rose-500 shrink-0">重</span>}
+                    <span className="flex-1 text-xs text-stone-600 truncate">{rt.title}</span>
+                    <span className="text-[10px] text-stone-400 shrink-0">
+                      {rt.recurrence.type === "weekly"
+                        ? `毎週${DAY_JA[rt.recurrence.dow]}曜`
+                        : rt.recurrence.type === "monthly_nth"
+                          ? `毎月第${rt.recurrence.nth}${DAY_JA[rt.recurrence.dow]}曜`
+                          : rt.recurrence.type === "monthly_day"
+                            ? `毎月${rt.recurrence.day}日`
+                            : "毎月末"}
+                      {rt.until && ` 〜${rt.until}`}
+                    </span>
+                    <button onClick={() => deleteRecurring(rt.id)} className="shrink-0 text-stone-300 hover:text-red-500 font-bold text-sm leading-none">×</button>
                   </div>
                 ))}
               </div>
