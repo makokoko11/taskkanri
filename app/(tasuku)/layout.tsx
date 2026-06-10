@@ -13,7 +13,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#f472b6",
+  themeColor: "#3b82f6",
 };
 
 export const metadata: Metadata = {
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
 export default function TasukuRootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja" className={font.className}>
-      <body className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 text-gray-900 antialiased">
+      <body className="min-h-screen bg-gradient-to-br from-blue-50 via-sky-50 to-slate-100 text-gray-900 antialiased">
         {children}
       </body>
     </html>

@@ -67,7 +67,7 @@ const URGENCY_STYLE: Record<string, string> = {
 const CATEGORY_COLOR: Record<string, string> = {
   rencho:      "bg-slate-700",
   machizukuri: "bg-emerald-800",
-  kodomoka:    "bg-rose-800",
+  kodomoka:    "bg-yellow-500",
 };
 
 type Category = "rencho" | "machizukuri" | "kodomoka";
@@ -87,6 +87,9 @@ const CATEGORY_SHORT: Record<Category, string> = {
   kodomoka: "子",
 };
 
+const GAS_URL =
+  "https://script.google.com/macros/s/AKfycbzLxRkkn0PrcE72CvHA5pP4uqCDqww-aYRLpvmj182agtjnbYPBe593tJ3kJCy-cduG/exec";
+
 interface Task {
   id: string;
   title: string;
@@ -100,15 +103,43 @@ interface Task {
   categories: Category[];
 }
 
+interface Template {
+  id: string;
+  title: string;
+  category: Category;
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') { field += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (c === "," && !inQuotes) {
+      result.push(field);
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+  result.push(field);
+  return result;
+}
+
 // ─── カレンダーコンポーネント ───────────────────────────────────
 function CalendarView({
   tasks,
   year,
   month,
+  visibleCats,
 }: {
   tasks: Task[];
   year: number;
   month: number;
+  visibleCats: Category[];
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -136,17 +167,17 @@ function CalendarView({
         </div>
       </div>
 
-      {/* 4列グリッド: 日付 | 連町 | まちづくり | 子ども会 */}
+      {/* グリッド: 日付 | 表示中のカテゴリ列 */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "2.2rem 1fr 1fr 1fr",
+          gridTemplateColumns: `2.2rem ${visibleCats.map(() => "1fr").join(" ")}`,
           gridTemplateRows: `1.6rem repeat(${daysInMonth}, auto)`,
         }}
       >
         {/* ── ヘッダー行 ── */}
         <div className="border-b border-stone-300 bg-stone-100 print:border print:border-stone-500" />
-        {CATEGORIES.map((cat) => (
+        {visibleCats.map((cat) => (
           <div
             key={`h-${cat}`}
             className={`border-b border-stone-300 border-l border-stone-200 flex items-center justify-center text-xs font-bold text-white print:border print:border-stone-500 print:text-stone-800 print:bg-stone-100 ${CATEGORY_COLOR[cat]}`}
@@ -164,20 +195,20 @@ function CalendarView({
           const isSun = dow === 0 || isHoliday;
           const isSat = dow === 6 && !isHoliday;
           const dateColor = isSun ? "text-red-600" : isSat ? "text-blue-600" : "text-stone-600";
-          const rowBg = isToday ? "bg-slate-50" : isSun ? "bg-red-50/30" : "";
+          const rowBg = isToday ? "bg-slate-50" : (isSun || isSat) ? "bg-red-50/30" : "";
 
           return [
             // 日付セル
             <div
               key={`d-${day}`}
-              className={`flex flex-col items-center justify-center border-b border-stone-100 min-h-[1.4rem] print:border print:border-stone-400 ${rowBg} ${dateColor}`}
+              className={`flex items-center justify-center gap-0.5 border-b border-stone-100 min-h-[1.4rem] print:border print:border-stone-400 ${rowBg} ${dateColor}`}
             >
               <span className={`text-[11px] font-bold leading-none ${isToday ? "text-slate-800 underline underline-offset-2" : ""}`}>{day}</span>
               <span className={`text-[9px] leading-none ${isToday ? "text-slate-600" : ""}`}>{DAY_JA[dow]}</span>
             </div>,
 
             // カテゴリごとのタスクセル
-            ...CATEGORIES.map((cat) => {
+            ...visibleCats.map((cat) => {
               const dayTasks = doneTasks.filter(
                 (t) => t.doneAt === dateStr && t.categories.includes(cat)
               );
@@ -191,12 +222,14 @@ function CalendarView({
                       key={t.id}
                       className="text-[10px] font-bold leading-snug break-all text-stone-700"
                     >
-                      {t.title}
-                      {t.startTime && (
-                        <span className="text-[9px] text-stone-400 ml-1 font-normal">
-                          {t.startTime}{t.endTime ? "〜" + t.endTime : ""}
-                        </span>
-                      )}
+                      <span className={t.important ? "border border-rose-500 rounded px-0.5" : ""}>
+                        {t.title}
+                        {t.startTime && (
+                          <span className="text-[9px] text-stone-400 ml-1 font-normal">
+                            {t.startTime}{t.endTime ? "〜" + t.endTime : ""}
+                          </span>
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -217,17 +250,37 @@ export default function TaskPage() {
   const [important, setImportant] = useState(false);
   const [inputCategory, setInputCategory] = useState<Category>("rencho");
   const [tab, setTab] = useState<Tab>("todo");
+  const [doneSortBy, setDoneSortBy] = useState<"dueDate" | "doneAt">("doneAt");
   const [pendingDoneId, setPendingDoneId] = useState<string | null>(null);
+  const [pendingDoneAt, setPendingDoneAt] = useState("");
   const [pendingStart, setPendingStart] = useState("");
   const [pendingEnd, setPendingEnd] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSent, setFeedbackSent] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [templateInput, setTemplateInput] = useState("");
+  const [templateCategory, setTemplateCategory] = useState<Category>("rencho");
   const [fontSize, setFontSize] = useState<"small" | "medium" | "large">("medium");
   const [sending, setSending] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "ok" | "error">("idle");
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [calYear, setCalYear] = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
+  const [calVisibleCats, setCalVisibleCats] = useState<Category[]>(CATEGORIES);
+
+  const toggleCalCat = (cat: Category) =>
+    setCalVisibleCats((prev) =>
+      prev.includes(cat)
+        ? prev.filter((c) => c !== cat)
+        : CATEGORIES.filter((c) => prev.includes(c) || c === cat)
+    );
   const inputRef = useRef<HTMLInputElement>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -270,6 +323,13 @@ export default function TaskPage() {
   }, []);
 
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem("tasuku-templates");
+      if (saved) setTemplates(JSON.parse(saved));
+    } catch { localStorage.removeItem("tasuku-templates"); }
+  }, []);
+
+  useEffect(() => {
     const sizes = { small: "13px", medium: "16px", large: "19px" };
     document.documentElement.style.fontSize = sizes[fontSize];
   }, [fontSize]);
@@ -282,6 +342,10 @@ export default function TaskPage() {
       setNotifPermission(Notification.permission);
     }
   }, []);
+
+  // アプリ起動時にGASからデータを取得
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { pullFromGAS(); }, []);
 
   useEffect(() => {
     const check = () => {
@@ -307,6 +371,49 @@ export default function TaskPage() {
     return () => clearInterval(id);
   }, [tasks, notifPermission]);
 
+  const pushToGAS = (action: "upsert" | "delete" | "full", payload: object) => {
+    fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, ...payload }),
+      mode: "no-cors",
+    }).catch(() => {});
+  };
+
+  const pullFromGAS = async () => {
+    setSyncStatus("syncing");
+    try {
+      const res = await fetch(GAS_URL);
+      if (!res.ok) throw new Error();
+      const data: Array<{ id: string; title: string; status: string }> = await res.json();
+      setTasks((prev) => {
+        const localMap = new Map(prev.map((t) => [t.id, t]));
+        const updated = prev.map((t) => {
+          const g = data.find((d) => d.id === t.id);
+          return g ? { ...t, done: g.status === "done" } : t;
+        });
+        const added = data
+          .filter((g) => !localMap.has(g.id))
+          .map((g) => ({
+            id: g.id,
+            title: g.title,
+            done: g.status === "done",
+            important: false as const,
+            createdAt: Date.now(),
+            categories: ["rencho"] as Category[],
+          }));
+        const merged = [...updated, ...added];
+        localStorage.setItem("tasuku-tasks", JSON.stringify(merged));
+        return merged;
+      });
+      setSyncStatus("ok");
+      setTimeout(() => setSyncStatus("idle"), 2000);
+    } catch {
+      setSyncStatus("error");
+      setTimeout(() => setSyncStatus("idle"), 3000);
+    }
+  };
+
   const persist = (next: Task[]) => {
     setTasks(next);
     localStorage.setItem("tasuku-tasks", JSON.stringify(next));
@@ -315,18 +422,17 @@ export default function TaskPage() {
   const addTask = () => {
     const title = input.trim();
     if (!title) return;
-    persist([
-      ...tasks,
-      {
-        id: crypto.randomUUID(),
-        title,
-        done: false,
-        important,
-        createdAt: Date.now(),
-        dueDate: dueDate || undefined,
-        categories: [inputCategory],
-      },
-    ]);
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title,
+      done: false,
+      important,
+      createdAt: Date.now(),
+      dueDate: dueDate || undefined,
+      categories: [inputCategory],
+    };
+    persist([...tasks, newTask]);
+    pushToGAS("upsert", { id: newTask.id, title: newTask.title, status: "todo" });
     setInput("");
     setDueDate("");
     setImportant(false);
@@ -336,36 +442,151 @@ export default function TaskPage() {
 
   const handleDoneChange = (id: string, currentDone: boolean) => {
     if (currentDone) {
+      const task = tasks.find((t) => t.id === id);
       persist(tasks.map((t) =>
         t.id === id
           ? { ...t, done: false, doneAt: undefined, startTime: undefined, endTime: undefined }
           : t
       ));
+      if (task) pushToGAS("upsert", { id, title: task.title, status: "todo" });
     } else {
       setPendingDoneId(id);
+      setPendingDoneAt(new Date().toISOString().slice(0, 10));
       setPendingStart("09:00");
-      setPendingEnd("");
+      setPendingEnd("12:00");
     }
   };
 
   const confirmDone = () => {
     if (!pendingDoneId) return;
+    const task = tasks.find((t) => t.id === pendingDoneId);
     persist(tasks.map((t) =>
       t.id === pendingDoneId
         ? {
             ...t,
             done: true,
-            doneAt: new Date().toISOString().slice(0, 10),
+            doneAt: pendingDoneAt || new Date().toISOString().slice(0, 10),
             startTime: pendingStart || undefined,
             endTime: pendingEnd || undefined,
           }
         : t
     ));
+    if (task) pushToGAS("upsert", { id: pendingDoneId, title: task.title, status: "done" });
     setPendingDoneId(null);
   };
 
-  const deleteTask = (id: string) =>
+  const deleteTask = (id: string) => {
     persist(tasks.filter((t) => t.id !== id));
+    pushToGAS("delete", { id });
+  };
+
+  const persistTemplates = (next: Template[]) => {
+    setTemplates(next);
+    localStorage.setItem("tasuku-templates", JSON.stringify(next));
+  };
+
+  const addTemplate = () => {
+    const title = templateInput.trim();
+    if (!title) return;
+    persistTemplates([...templates, { id: crypto.randomUUID(), title, category: templateCategory }]);
+    setTemplateInput("");
+  };
+
+  const deleteTemplate = (id: string) =>
+    persistTemplates(templates.filter((t) => t.id !== id));
+
+  const applyTemplate = (tmpl: Template) => {
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: tmpl.title,
+      done: false,
+      important: false,
+      createdAt: Date.now(),
+      dueDate: dueDate || undefined,
+      categories: [tmpl.category],
+    };
+    persist([...tasks, newTask]);
+    pushToGAS("upsert", { id: newTask.id, title: newTask.title, status: "todo" });
+    setShowTemplates(false);
+  };
+
+  const submitFeedback = () => {
+    const msg = feedbackText.trim();
+    if (!msg) return;
+    fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ type: "feedback", message: msg, sentAt: new Date().toISOString() }),
+      mode: "no-cors",
+    }).catch(() => {});
+    setFeedbackText("");
+    setFeedbackSent(true);
+    setTimeout(() => setFeedbackSent(false), 3000);
+  };
+
+  const exportCSV = () => {
+    const header = "id,title,done,important,createdAt,dueDate,doneAt,startTime,endTime,categories";
+    const rows = tasks.map((t) => [
+      t.id,
+      `"${t.title.replace(/"/g, '""')}"`,
+      t.done,
+      t.important,
+      t.createdAt,
+      t.dueDate ?? "",
+      t.doneAt ?? "",
+      t.startTime ?? "",
+      t.endTime ?? "",
+      `"${t.categories.join("|")}"`,
+    ].join(","));
+    const csv = "﻿" + [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tasuku-backup-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const importCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = (ev.target?.result as string).replace(/^﻿/, "");
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        if (lines.length < 2) throw new Error();
+        const validCats = new Set<string>(["rencho", "machizukuri", "kodomoka"]);
+        const imported: Task[] = lines.slice(1).map((line) => {
+          const [id, title, done, important, createdAt, dueDate, doneAt, startTime, endTime, categories] = parseCSVLine(line);
+          const cats = categories.split("|").filter((c) => validCats.has(c)) as Category[];
+          return {
+            id: id || crypto.randomUUID(),
+            title,
+            done: done === "true",
+            important: important === "true",
+            createdAt: Number(createdAt) || Date.now(),
+            dueDate: dueDate || undefined,
+            doneAt: doneAt || undefined,
+            startTime: startTime || undefined,
+            endTime: endTime || undefined,
+            categories: cats.length > 0 ? cats : ["rencho"],
+          };
+        });
+        if (!confirm(`${imported.length}件のタスクを読み込みます。現在のデータは上書きされます。続けますか？`)) return;
+        persist(imported);
+        pushToGAS("full", { tasks: imported.map((t) => ({ id: t.id, title: t.title, status: t.done ? "done" : "todo" })) });
+        setShowSettings(false);
+      } catch {
+        alert("CSVの読み込みに失敗しました");
+      }
+    };
+    reader.readAsText(file, "utf-8");
+    e.target.value = "";
+  };
 
   const requestNotification = async () => {
     if (!("Notification" in window)) return;
@@ -436,8 +657,19 @@ export default function TaskPage() {
       return (b.important ? 1 : 0) - (a.important ? 1 : 0);
     });
 
-  const colTasks = (cat: Category) =>
-    sortByDue(tasks.filter((t) => t.categories.includes(cat) && (tab === "todo" ? !t.done : t.done)));
+  const sortByDoneAt = (arr: Task[]) =>
+    [...arr].sort((a, b) => {
+      if (!a.doneAt && !b.doneAt) return 0;
+      if (!a.doneAt) return 1;
+      if (!b.doneAt) return -1;
+      return a.doneAt.localeCompare(b.doneAt);
+    });
+
+  const colTasks = (cat: Category) => {
+    const filtered = tasks.filter((t) => t.categories.includes(cat) && (tab === "todo" ? !t.done : t.done));
+    if (tab === "done" && doneSortBy === "doneAt") return sortByDoneAt(filtered);
+    return sortByDue(filtered);
+  };
 
   const todoCount = tasks.filter((t) => !t.done).length;
   const doneCount = tasks.filter((t) => t.done).length;
@@ -469,6 +701,85 @@ export default function TaskPage() {
   return (
     <div className={`px-2 overflow-x-hidden ${isCalendar ? "h-[100dvh] flex flex-col pt-4 pb-16 overflow-hidden" : "max-w-2xl mx-auto py-6 pb-20"}`}>
 
+      {/* ── テンプレートモーダル ── */}
+      {showTemplates && (
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50" onClick={() => setShowTemplates(false)}>
+          <div className="bg-white rounded-t-2xl p-4 w-full max-w-lg border-t border-stone-200 max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-stone-700 mb-3 shrink-0">テンプレートから追加</h3>
+            <div className="overflow-y-auto flex-1">
+              {templates.length === 0 && (
+                <p className="text-sm text-stone-400 text-center py-6">設定からテンプレートを登録してください</p>
+              )}
+              {CATEGORIES.map((cat) => {
+                const list = templates.filter((t) => t.category === cat);
+                if (list.length === 0) return null;
+                return (
+                  <div key={cat} className="mb-3">
+                    <div className={`text-[10px] font-bold text-white px-2 py-0.5 rounded inline-block mb-1 ${CATEGORY_COLOR[cat]}`}>{CATEGORY_LABELS[cat]}</div>
+                    <div className="space-y-1">
+                      {list.map((tmpl) => (
+                        <button
+                          key={tmpl.id}
+                          onClick={() => applyTemplate(tmpl)}
+                          className="w-full text-left px-3 py-2.5 text-sm text-stone-700 bg-stone-50 hover:bg-blue-50 active:bg-blue-100 rounded-xl border border-stone-200 transition-colors"
+                        >
+                          {tmpl.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={() => setShowTemplates(false)} className="mt-3 w-full py-2 text-sm font-bold text-stone-400 border border-stone-200 rounded-xl hover:bg-stone-50 shrink-0">閉じる</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── チェンジログモーダル ── */}
+      {showChangelog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" onClick={() => setShowChangelog(false)}>
+          <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-xs border border-stone-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <h3 className="text-sm font-bold text-stone-700 tracking-wide">更新履歴</h3>
+              <span className="text-[10px] text-stone-400">最終更新日 2026-06-10</span>
+            </div>
+            <ul className="text-xs text-stone-600 space-y-2">
+              <li><span className="font-bold text-stone-500">ver1.00</span>　新規作成</li>
+              <li><span className="font-bold text-stone-500">ver1.01</span>　同期化＆カレンダー表示修正他</li>
+              <li><span className="font-bold text-stone-500">ver1.02</span>　CSV入出力追加</li>
+            </ul>
+            <div className="mt-4 border-t border-stone-100 pt-4">
+              <p className="text-xs font-bold text-stone-500 mb-2">要望を送る</p>
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                placeholder="機能追加・改善点など..."
+                rows={3}
+                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg text-stone-700 placeholder-stone-300 focus:outline-none focus:border-slate-400 resize-none"
+              />
+              {feedbackSent ? (
+                <p className="text-xs text-stone-400 font-bold text-center mt-2">直接言ってくださいw</p>
+              ) : (
+                <button
+                  onClick={submitFeedback}
+                  disabled={!feedbackText.trim()}
+                  className="mt-2 w-full py-1.5 rounded-lg bg-slate-700 text-white text-xs font-bold hover:bg-slate-800 transition-colors disabled:opacity-40"
+                >
+                  送信
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setShowChangelog(false)}
+              className="mt-3 w-full py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-400 hover:bg-stone-50"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── 設定モーダル ── */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
@@ -497,6 +808,58 @@ export default function TaskPage() {
               スマホ：共有メニューが開きます（メール・LINE等へ送信可能）。<br />
               PC：PDFが自動ダウンロードされます。
             </p>
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-stone-500 mb-2 tracking-wider uppercase">バックアップ</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={exportCSV}
+                  className="flex-1 py-2 rounded-lg border border-stone-300 text-sm font-bold text-stone-600 hover:bg-stone-50 transition-colors"
+                >
+                  CSV出力
+                </button>
+                <button
+                  onClick={() => csvInputRef.current?.click()}
+                  className="flex-1 py-2 rounded-lg border border-stone-300 text-sm font-bold text-stone-600 hover:bg-stone-50 transition-colors"
+                >
+                  CSV入力
+                </button>
+                <input
+                  ref={csvInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={importCSV}
+                  className="hidden"
+                />
+              </div>
+            </div>
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-stone-500 mb-2 tracking-wider uppercase">タスク定型文</label>
+              <div className="flex gap-1 mb-2">
+                <input
+                  value={templateInput}
+                  onChange={(e) => setTemplateInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTemplate()}
+                  placeholder="タスク名"
+                  className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-slate-400"
+                />
+                <button
+                  onClick={addTemplate}
+                  className="px-2 py-1.5 bg-slate-700 text-white text-xs font-bold rounded-lg hover:bg-slate-800"
+                >追加</button>
+              </div>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {templates.length === 0 && (
+                  <p className="text-xs text-stone-300 text-center py-2">テンプレートなし</p>
+                )}
+                {templates.map((tmpl) => (
+                  <div key={tmpl.id} className="flex items-center gap-1 px-2 py-1 bg-stone-50 rounded-lg">
+                    <span className={`text-[10px] font-bold text-white px-1 py-0.5 rounded shrink-0 ${CATEGORY_COLOR[tmpl.category]}`}>{CATEGORY_SHORT[tmpl.category]}</span>
+                    <span className="flex-1 text-xs text-stone-600 truncate">{tmpl.title}</span>
+                    <button onClick={() => deleteTemplate(tmpl.id)} className="shrink-0 text-stone-300 hover:text-red-500 font-bold text-sm leading-none">×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setShowSettings(false)} className="flex-1 py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-400 hover:bg-stone-50">キャンセル</button>
               <button
@@ -518,6 +881,15 @@ export default function TaskPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-xl p-6 shadow-xl w-full max-w-xs border border-stone-200">
             <h3 className="text-base font-bold text-stone-700 mb-4 text-center tracking-wide">作業時間を入力</h3>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-sm font-bold text-stone-500 w-10 shrink-0">日付</span>
+              <input
+                type="date"
+                value={pendingDoneAt}
+                onChange={(e) => setPendingDoneAt(e.target.value)}
+                className="flex-1 px-2 py-2 border border-stone-300 rounded-lg text-sm text-stone-700 bg-white focus:outline-none focus:border-slate-500"
+              />
+            </div>
             {[
               { label: "開始", value: pendingStart, set: setPendingStart },
               { label: "終了", value: pendingEnd,   set: setPendingEnd   },
@@ -570,10 +942,36 @@ export default function TaskPage() {
       )}
       {/* ヘッダー */}
       <header className={`flex items-center justify-between print:hidden ${isCalendar ? "mb-2" : "mb-4"}`}>
-        <h1 className="text-lg font-bold text-stone-800 tracking-widest">
+        <h1 className="text-lg font-bold text-stone-800 tracking-widest flex items-baseline gap-1.5">
           連町事務局タスク管理
+          <button
+            onClick={() => setShowChangelog(true)}
+            className="text-[10px] font-bold text-stone-400 hover:text-slate-600 transition-colors tracking-normal"
+          >
+            ver1.02
+          </button>
         </h1>
         <div className="flex items-center gap-3">
+          <button
+            onClick={pullFromGAS}
+            disabled={syncStatus === "syncing"}
+            title={
+              syncStatus === "syncing" ? "同期中…" :
+              syncStatus === "ok" ? "同期完了" :
+              syncStatus === "error" ? "同期失敗" : "GASと同期"
+            }
+            className={`transition-colors select-none ${
+              syncStatus === "error" ? "text-red-400" :
+              syncStatus === "ok" ? "text-emerald-500" :
+              syncStatus === "syncing" ? "text-blue-400 animate-spin" :
+              "text-stone-400 hover:text-stone-700"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+          </button>
           <button
             onClick={() => setShowSettings(true)}
             title="設定"
@@ -622,7 +1020,23 @@ export default function TaskPage() {
             </button>
           </div>
 
-          <CalendarView tasks={tasks} year={calYear} month={calMonth} />
+          {/* カテゴリ表示切替 */}
+          <div className="flex items-center gap-3 mb-2 shrink-0 print:hidden">
+            {CATEGORIES.map((cat) => (
+              <label key={cat} className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={calVisibleCats.includes(cat)}
+                  onChange={() => toggleCalCat(cat)}
+                  className="w-4 h-4 cursor-pointer"
+                  style={{ accentColor: cat === "rencho" ? "#334155" : cat === "machizukuri" ? "#065f46" : "#eab308" }}
+                />
+                <span className="text-xs font-bold text-stone-600">{CATEGORY_LABELS[cat]}</span>
+              </label>
+            ))}
+          </div>
+
+          <CalendarView tasks={tasks} year={calYear} month={calMonth} visibleCats={calVisibleCats} />
         </>
       )}
 
@@ -651,14 +1065,40 @@ export default function TaskPage() {
 
             {/* 入力欄 ＋ 右列（重要・追加） */}
             <div className="flex gap-2 items-end">
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addTask()}
-                placeholder="新しいタスクを入力..."
-                className="flex-1 min-w-0 px-4 py-3 border border-stone-300 rounded-xl bg-white text-stone-700 placeholder-stone-300 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition"
-              />
+              <div className="relative flex-1 min-w-0">
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  placeholder="新しいタスクを入力..."
+                  className="w-full px-4 py-3 border border-stone-300 rounded-xl bg-white text-stone-700 placeholder-stone-300 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-400 transition"
+                />
+                {showSuggestions && templates.length > 0 && (() => {
+                  const suggestions = templates.filter((t) =>
+                    input === "" || t.title.toLowerCase().includes(input.toLowerCase())
+                  );
+                  return suggestions.length > 0 ? (
+                    <div className="absolute top-full left-0 right-0 z-30 bg-white border border-stone-200 rounded-xl shadow-lg mt-1 max-h-52 overflow-y-auto">
+                      {suggestions.map((tmpl) => (
+                        <button
+                          key={tmpl.id}
+                          onMouseDown={() => {
+                            setInput(tmpl.title);
+                            setShowSuggestions(false);
+                            inputRef.current?.focus();
+                          }}
+                          className="w-full text-left px-3 py-2.5 text-sm text-stone-700 hover:bg-stone-50 border-b border-stone-100 last:border-b-0"
+                        >
+                          {tmpl.title}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
+              </div>
               <div className="flex flex-col gap-1 shrink-0">
                 <label className="flex items-center justify-center gap-1 cursor-pointer select-none border border-rose-200 rounded-lg px-2 py-1 bg-rose-50">
                   <input
@@ -741,6 +1181,29 @@ export default function TaskPage() {
             ))}
           </div>
 
+          {/* 完了タブ: 並べ替え */}
+          {tab === "done" && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] font-bold text-stone-400 tracking-wider">並べ替え</span>
+              {([
+                { key: "doneAt",  label: "完了日" },
+                { key: "dueDate", label: "予定日" },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setDoneSortBy(key)}
+                  className={`px-3 py-0.5 rounded-lg text-xs font-bold transition-all ${
+                    doneSortBy === key
+                      ? "bg-slate-700 text-white shadow-sm"
+                      : "bg-white border border-stone-200 text-stone-500 hover:bg-stone-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* ─── 3列タスクリスト ─── */}
           <div className="grid grid-cols-3 gap-2">
             {CATEGORIES.map((cat) => {
@@ -765,7 +1228,7 @@ export default function TaskPage() {
                     const due = task.dueDate
                       ? tab === "done" ? formatDateReiwa(task.dueDate) : formatDate(task.dueDate)
                       : null;
-                    const cardClass = task.important && !task.done
+                    const cardClass = task.important
                       ? "bg-white border-4 border-rose-500"
                       : `border ${URGENCY_STYLE[urgency]}`;
                     return (
@@ -797,6 +1260,7 @@ export default function TaskPage() {
                         </div>
                         {tab === "done" && task.doneAt && (
                           <p className="text-[9px] text-gray-400 mt-0.5">
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-blue-500 text-white text-[8px] font-bold mr-0.5 leading-none">完</span>
                             {formatDate(task.doneAt).text}
                             {(task.startTime || task.endTime) && (
                               <span className="ml-1">
